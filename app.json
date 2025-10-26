@@ -13,7 +13,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#10b981"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.threesteps.app",
@@ -65,7 +67,10 @@
       "typedRoutes": true
     },
     "extra": {
-      "eas": {}
+      "eas": {
+        "projectId": "861641c2-0c45-4b28-a1c9-d037dac499da"
+      },
+      "router": {}
     },
     "owner": "tbijou"
   }
