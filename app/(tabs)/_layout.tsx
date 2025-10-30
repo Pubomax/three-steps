@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
-import { Home, ShoppingCart, Camera, History, BarChart3, Settings } from 'lucide-react-native';
+import { Home, ShoppingCart, Camera, History, BarChart3 } from 'lucide-react-native';
+import HeaderActions from '@/components/HeaderActions';
 import LogoutButton from '@/components/LogoutButton';
 
 export default function TabLayout() {
@@ -15,7 +16,7 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           headerTitle: 'Grocery Tracker',
-          headerRight: () => <LogoutButton />,
+          headerRight: () => <HeaderActions />,
           tabBarIcon: ({ size, color }) => (
             <Home size={size} color={color} />
           ),
@@ -26,7 +27,7 @@ export default function TabLayout() {
         options={{
           title: 'Cart',
           headerTitle: 'My Grocery Cart',
-          headerRight: () => <LogoutButton />,
+          headerRight: () => <HeaderActions />,
           tabBarIcon: ({ size, color }) => (
             <ShoppingCart size={size} color={color} />
           ),
@@ -37,7 +38,7 @@ export default function TabLayout() {
         options={{
           title: 'Scan',
           headerTitle: 'Scan Products',
-          headerRight: () => <LogoutButton />,
+          headerRight: () => <HeaderActions />,
           tabBarIcon: ({ size, color }) => (
             <Camera size={size} color={color} />
           ),
@@ -48,7 +49,7 @@ export default function TabLayout() {
         options={{
           title: 'History',
           headerTitle: 'Purchase History',
-          headerRight: () => <LogoutButton />,
+          headerRight: () => <HeaderActions />,
           tabBarIcon: ({ size, color }) => (
             <History size={size} color={color} />
           ),
@@ -59,7 +60,7 @@ export default function TabLayout() {
         options={{
           title: 'Analytics',
           headerTitle: 'Shopping Analytics',
-          headerRight: () => <LogoutButton />,
+          headerRight: () => <HeaderActions />,
           tabBarIcon: ({ size, color }) => (
             <BarChart3 size={size} color={color} />
           ),
@@ -71,9 +72,7 @@ export default function TabLayout() {
           title: 'Settings',
           headerTitle: 'Account Settings',
           headerRight: () => <LogoutButton />,
-          tabBarIcon: ({ size, color }) => (
-            <Settings size={size} color={color} />
-          ),
+          href: null, // Hide from tab bar
         }}
       />
     </Tabs>
