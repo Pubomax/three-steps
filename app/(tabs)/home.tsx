@@ -56,8 +56,7 @@ export default function HomeScreen() {
             style={[styles.logo, isIPad && styles.logoIPad]}
             resizeMode="contain"
           />
-          <Text style={[styles.appName, isIPad && styles.appNameIPad]}>Three Steps</Text>
-          <Text style={[styles.subtitle, isIPad && styles.subtitleIPad]}>Smart shopping made simple</Text>
+          <Text style={[styles.subtitle, isIPad && styles.subtitleIPad]}>Scan, track, and save</Text>
         </View>
 
         <View style={[styles.featuresSection, isIPad && styles.featuresSectionIPad]}>
@@ -165,12 +164,12 @@ const styles = StyleSheet.create({
   logo: {
     width: 120,
     height: 120,
-    marginBottom: 16,
+    marginBottom: 8,
   },
   logoIPad: {
     width: 160,
     height: 160,
-    marginBottom: 20,
+    marginBottom: 12,
   },
   appName: {
     fontSize: 32,

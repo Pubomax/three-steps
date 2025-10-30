@@ -12,7 +12,9 @@ import {
   Platform,
 } from 'react-native';
 import { X, ShoppingCart, Store, DollarSign, Tag } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 type GroceryType = 'regular' | 'special_event' | 'bulk' | 'weekly' | 'monthly';
 
@@ -23,6 +25,7 @@ type Props = {
 };
 
 export default function StartGroceryFlow({ visible, onClose, onSuccess }: Props) {
+  const { isGuest } = useAuth();
   const [step, setStep] = useState(1);
   const [sessionName, setSessionName] = useState('');
   const [storeName, setStoreName] = useState('');
@@ -81,32 +84,11 @@ export default function StartGroceryFlow({ visible, onClose, onSuccess }: Props)
   const handleStartGrocery = async () => {
     setLoading(true);
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: existingSession } = await (supabase as any)
-        .from('grocery_sessions')
-        .select('id, name')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (existingSession) {
-        Alert.alert(
-          'Active Session Found',
-          `You already have an active session "${existingSession.name}". Please end it before starting a new one.`,
-          [{ text: 'OK' }]
-        );
-        setLoading(false);
-        return;
-      }
-
-      const { data, error } = await (supabase as any)
-        .from('grocery_sessions')
-        .insert({
-          user_id: user.id,
+      if (isGuest) {
+        // Guest mode: Store session locally
+        const guestSessionId = `guest-${Date.now()}`;
+        const guestSession = {
+          id: guestSessionId,
           name: sessionName,
           store_name: storeName,
           store_location: storeLocation,
@@ -115,24 +97,87 @@ export default function StartGroceryFlow({ visible, onClose, onSuccess }: Props)
           is_active: true,
           started_at: new Date().toISOString(),
           status: 'in_progress',
-        })
-        .select()
-        .single();
+          user_id: 'guest',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
 
-      if (error) {
-        console.error('Error creating session:', error);
-        throw error;
+        // Check for existing active guest session
+        const existingSessionsJson = await AsyncStorage.getItem('guest_sessions');
+        const existingSessions = existingSessionsJson ? JSON.parse(existingSessionsJson) : [];
+        
+        const activeSession = existingSessions.find((s: any) => s.is_active);
+        if (activeSession) {
+          Alert.alert(
+            'Active Session Found',
+            `You already have an active session "${activeSession.name}". Please end it before starting a new one.`,
+            [{ text: 'OK' }]
+          );
+          setLoading(false);
+          return;
+        }
+
+        // Store guest session
+        const updatedSessions = [...existingSessions, guestSession];
+        await AsyncStorage.setItem('guest_sessions', JSON.stringify(updatedSessions));
+
+        console.log('Guest session created successfully:', guestSession);
+        resetForm();
+        onSuccess(guestSessionId);
+      } else {
+        // Authenticated user: Store in Supabase
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: existingSession } = await (supabase as any)
+          .from('grocery_sessions')
+          .select('id, name')
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (existingSession) {
+          Alert.alert(
+            'Active Session Found',
+            `You already have an active session "${existingSession.name}". Please end it before starting a new one.`,
+            [{ text: 'OK' }]
+          );
+          setLoading(false);
+          return;
+        }
+
+        const { data, error } = await (supabase as any)
+          .from('grocery_sessions')
+          .insert({
+            user_id: user.id,
+            name: sessionName,
+            store_name: storeName,
+            store_location: storeLocation,
+            spending_limit: parseFloat(spendingLimit),
+            grocery_type: groceryType,
+            is_active: true,
+            started_at: new Date().toISOString(),
+            status: 'in_progress',
+          })
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Error creating session:', error);
+          throw error;
+        }
+
+        if (!data) {
+          console.error('No data returned from session creation');
+          throw new Error('Failed to create session');
+        }
+
+        console.log('Session created successfully:', data);
+        resetForm();
+        onSuccess(data.id);
       }
-
-      if (!data) {
-        console.error('No data returned from session creation');
-        throw new Error('Failed to create session');
-      }
-
-      console.log('Session created successfully:', data);
-      // Don't show alert - immediately proceed to success callback
-      resetForm();
-      onSuccess(data.id);
     } catch (error) {
       console.error('Error starting grocery:', error);
       Alert.alert('Error', 'Failed to start grocery session');
