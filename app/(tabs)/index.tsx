@@ -53,6 +53,29 @@ export default function GroceryScreen() {
   useEffect(() => {
     if (activeSession) {
       loadCart();
+
+      // Set up real-time subscription for cart updates
+      const channel = supabase
+        .channel('cart-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'cart_items',
+            filter: `session_id=eq.${activeSession.id}`,
+          },
+          (payload) => {
+            console.log('Cart updated:', payload);
+            loadCart();
+          }
+        )
+        .subscribe();
+
+      // Cleanup subscription on unmount
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [activeSession]);
 
@@ -245,6 +268,9 @@ export default function GroceryScreen() {
                   user_id: user.id,
                   total_amount: cartTotal,
                   item_count: cartItems.length,
+                  store_name: activeSession.store_name,
+                  store_location: activeSession.store_location,
+                  grocery_session_id: activeSession.id,
                 })
                 .select('id')
                 .single();
@@ -385,9 +411,22 @@ export default function GroceryScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            <Text style={styles.limitAmount}>
-              {spendingLimit > 0 ? `$${spendingLimit.toFixed(2)}` : 'Not set'}
-            </Text>
+            <>
+              <Text style={styles.limitAmount}>
+                {spendingLimit > 0 ? `$${spendingLimit.toFixed(2)}` : 'Not set'}
+              </Text>
+              {spendingLimit > 0 && (
+                <View style={styles.remainingBudgetContainer}>
+                  <Text style={styles.remainingBudgetLabel}>Remaining:</Text>
+                  <Text style={[
+                    styles.remainingBudgetAmount,
+                    isOverBudget && styles.remainingBudgetNegative
+                  ]}>
+                    ${(spendingLimit - cartTotal).toFixed(2)}
+                  </Text>
+                </View>
+              )}
+            </>
           )}
         </View>
 
@@ -558,12 +597,31 @@ const styles = StyleSheet.create({
   editButton: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#10b981',
+    color: '#ff00ff',
   },
   limitAmount: {
     fontSize: 32,
     fontWeight: '700',
     color: '#111827',
+  },
+  remainingBudgetContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 8,
+  },
+  remainingBudgetLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  remainingBudgetAmount: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#10b981',
+  },
+  remainingBudgetNegative: {
+    color: '#ef4444',
   },
   limitEditRow: {
     flexDirection: 'row',
@@ -583,7 +641,7 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   saveLimitButton: {
-    backgroundColor: '#10b981',
+    backgroundColor: '#ff00ff',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
@@ -594,7 +652,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   totalSection: {
-    backgroundColor: '#10b981',
+    backgroundColor: '#ff00ff',
     borderRadius: 12,
     padding: 20,
     marginBottom: 16,
@@ -708,7 +766,7 @@ const styles = StyleSheet.create({
   cartItemTotal: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#10b981',
+    color: '#ff00ff',
   },
   cartItemActions: {
     flexDirection: 'row',
@@ -744,7 +802,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
-    backgroundColor: '#10b981',
+    backgroundColor: '#ff00ff',
     borderRadius: 12,
     padding: 20,
     marginTop: 16,

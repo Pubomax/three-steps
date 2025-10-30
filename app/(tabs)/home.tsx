@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking, Alert, useWindowDimensions, Image } from 'react-native';
 import { ShoppingCart, CheckCircle, TrendingUp, Clock, MessageCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import StartGroceryFlow from '@/components/StartGroceryFlow';
+import { useIsIPad } from '@/hooks/useIsIPad';
 
 export default function HomeScreen() {
   const [showStartFlow, setShowStartFlow] = useState(false);
   const router = useRouter();
+  const isIPad = useIsIPad();
+  const { width } = useWindowDimensions();
 
   const handleGroceryStarted = (sessionId: string) => {
     setShowStartFlow(false);
@@ -14,8 +17,8 @@ export default function HomeScreen() {
   };
 
   const handleFeedback = async () => {
-    const email = 'feedback@threesteps.app';
-    const subject = 'Three Steps MVP Feedback';
+    const email = 'feedback@strago.app';
+    const subject = 'Strago MVP Feedback';
     const body = 'Hi! Here is my feedback:\n\n';
 
     const mailtoUrl = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -42,16 +45,25 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={[
+        styles.scrollContent,
+        isIPad && styles.scrollContentIPad,
+        isIPad && width > 900 && styles.scrollContentIPadLarge
+      ]}>
         <View style={styles.header}>
-          <Text style={styles.title}>Grocery Tracker</Text>
-          <Text style={styles.subtitle}>Smart shopping made simple</Text>
+          <Image
+            source={require('@/assets/images/icon.png')}
+            style={[styles.logo, isIPad && styles.logoIPad]}
+            resizeMode="contain"
+          />
+          <Text style={[styles.appName, isIPad && styles.appNameIPad]}>Three Steps</Text>
+          <Text style={[styles.subtitle, isIPad && styles.subtitleIPad]}>Smart shopping made simple</Text>
         </View>
 
-        <View style={styles.featuresSection}>
-          <View style={styles.featureItem}>
-            <View style={styles.iconCircle}>
-              <ShoppingCart size={24} color="#10b981" />
+        <View style={[styles.featuresSection, isIPad && styles.featuresSectionIPad]}>
+          <View style={[styles.featureItem, isIPad && styles.featureItemIPad]}>
+            <View style={[styles.iconCircle, isIPad && styles.iconCircleIPad]}>
+              <ShoppingCart size={isIPad ? 32 : 24} color="#ff00ff" />
             </View>
             <View style={styles.featureText}>
               <Text style={styles.featureTitle}>Track Your Cart</Text>
@@ -61,9 +73,9 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <View style={styles.featureItem}>
+          <View style={[styles.featureItem, isIPad && styles.featureItemIPad]}>
             <View style={styles.iconCircle}>
-              <CheckCircle size={24} color="#10b981" />
+              <CheckCircle size={isIPad ? 32 : 24} color="#ff00ff" />
             </View>
             <View style={styles.featureText}>
               <Text style={styles.featureTitle}>Set Spending Limits</Text>
@@ -73,9 +85,9 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <View style={styles.featureItem}>
+          <View style={[styles.featureItem, isIPad && styles.featureItemIPad]}>
             <View style={styles.iconCircle}>
-              <TrendingUp size={24} color="#10b981" />
+              <TrendingUp size={isIPad ? 32 : 24} color="#ff00ff" />
             </View>
             <View style={styles.featureText}>
               <Text style={styles.featureTitle}>View Analytics</Text>
@@ -85,9 +97,9 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <View style={styles.featureItem}>
+          <View style={[styles.featureItem, isIPad && styles.featureItemIPad]}>
             <View style={styles.iconCircle}>
-              <Clock size={24} color="#10b981" />
+              <Clock size={isIPad ? 32 : 24} color="#ff00ff" />
             </View>
             <View style={styles.featureText}>
               <Text style={styles.featureTitle}>Purchase History</Text>
@@ -110,7 +122,7 @@ export default function HomeScreen() {
             This is an early MVP. Your feedback helps us build a better app!
           </Text>
           <TouchableOpacity style={styles.feedbackButton} onPress={handleFeedback}>
-            <MessageCircle size={20} color="#10b981" />
+            <MessageCircle size={20} color="#ff00ff" />
             <Text style={styles.feedbackButtonText}>Send Feedback</Text>
           </TouchableOpacity>
         </View>
@@ -136,28 +148,66 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 24,
   },
+  scrollContentIPad: {
+    padding: 48,
+    maxWidth: 900,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  scrollContentIPadLarge: {
+    maxWidth: 1200,
+  },
   header: {
     marginBottom: 32,
     marginTop: 16,
+    alignItems: 'center',
   },
-  title: {
-    fontSize: 36,
+  logo: {
+    width: 120,
+    height: 120,
+    marginBottom: 16,
+  },
+  logoIPad: {
+    width: 160,
+    height: 160,
+    marginBottom: 20,
+  },
+  appName: {
+    fontSize: 32,
     fontWeight: '700',
     color: '#111827',
     marginBottom: 8,
+    textAlign: 'center',
+  },
+  appNameIPad: {
+    fontSize: 40,
   },
   subtitle: {
     fontSize: 18,
     color: '#6b7280',
     fontWeight: '400',
+    textAlign: 'center',
+  },
+  subtitleIPad: {
+    fontSize: 20,
   },
   featuresSection: {
     marginBottom: 32,
+  },
+  featuresSectionIPad: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 24,
   },
   featureItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: 24,
+  },
+  featureItemIPad: {
+    flex: 1,
+    minWidth: '45%',
+    marginBottom: 0,
   },
   iconCircle: {
     width: 48,
@@ -167,6 +217,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 16,
+  },
+  iconCircleIPad: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
   },
   featureText: {
     flex: 1,
@@ -184,7 +239,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   startButton: {
-    backgroundColor: '#10b981',
+    backgroundColor: '#ff00ff',
     paddingVertical: 18,
     borderRadius: 12,
     alignItems: 'center',
@@ -226,7 +281,7 @@ const styles = StyleSheet.create({
   feedbackButton: {
     backgroundColor: '#f0fdf4',
     borderWidth: 1,
-    borderColor: '#10b981',
+    borderColor: '#ff00ff',
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 16,
@@ -238,6 +293,6 @@ const styles = StyleSheet.create({
   feedbackButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#10b981',
+    color: '#ff00ff',
   },
 });

@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Home, ShoppingCart, Camera, History, BarChart3 } from 'lucide-react-native';
+import { Home, ShoppingCart, Camera, History, BarChart3, Settings } from 'lucide-react-native';
 import LogoutButton from '@/components/LogoutButton';
 
 export default function TabLayout() {
@@ -7,7 +7,7 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: true,
-        tabBarActiveTintColor: '#10b981',
+        tabBarActiveTintColor: '#ff00ff',
         tabBarInactiveTintColor: '#6b7280',
       }}>
       <Tabs.Screen
@@ -62,6 +62,17 @@ export default function TabLayout() {
           headerRight: () => <LogoutButton />,
           tabBarIcon: ({ size, color }) => (
             <BarChart3 size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          headerTitle: 'Account Settings',
+          headerRight: () => <LogoutButton />,
+          tabBarIcon: ({ size, color }) => (
+            <Settings size={size} color={color} />
           ),
         }}
       />

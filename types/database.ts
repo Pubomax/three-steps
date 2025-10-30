@@ -195,6 +195,9 @@ export type Database = {
           item_count: number;
           completed_at: string;
           created_at: string;
+          store_name: string | null;
+          store_location: string | null;
+          grocery_session_id: string | null;
         };
         Insert: {
           id?: string;
@@ -203,6 +206,9 @@ export type Database = {
           item_count: number;
           completed_at?: string;
           created_at?: string;
+          store_name?: string | null;
+          store_location?: string | null;
+          grocery_session_id?: string | null;
         };
         Update: {
           id?: string;
@@ -211,6 +217,9 @@ export type Database = {
           item_count?: number;
           completed_at?: string;
           created_at?: string;
+          store_name?: string | null;
+          store_location?: string | null;
+          grocery_session_id?: string | null;
         };
       };
       checkout_items: {

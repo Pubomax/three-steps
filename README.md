@@ -1,4 +1,4 @@
-# Three Steps - Grocery Tracker MVP
+# Strago - Grocery Tracker MVP
 
 A mobile-first grocery shopping tracker that helps you manage shopping sessions, track prices, scan products, and analyze spending patterns.
 

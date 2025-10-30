@@ -1,41 +1,40 @@
 {
   "expo": {
-    "name": "Three Steps",
+    "name": "Strago",
     "slug": "three-steps",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "threesteps",
+    "scheme": "strago",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#10b981"
+      "backgroundColor": "#ff00ff"
     },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.threesteps.app",
-      "buildNumber": "1",
+      "bundleIdentifier": "com.pubomaxaccess.app",
+      "buildNumber": "2",
       "infoPlist": {
-        "NSCameraUsageDescription": "Three Steps needs access to your camera to scan product barcodes and take photos of items you're purchasing.",
-        "NSPhotoLibraryUsageDescription": "Three Steps needs access to your photo library to save product photos.",
-        "NSPhotoLibraryAddUsageDescription": "Three Steps needs permission to save photos of your products.",
-        "NSLocationWhenInUseUsageDescription": "Three Steps uses your location to help track where you shop and provide store-specific insights."
+        "NSCameraUsageDescription": "Strago needs access to your camera to scan product barcodes and take photos of items you're purchasing.",
+        "NSPhotoLibraryUsageDescription": "Strago needs access to your photo library to save product photos.",
+        "NSPhotoLibraryAddUsageDescription": "Strago needs permission to save photos of your products.",
+        "NSLocationWhenInUseUsageDescription": "Strago uses your location to help track where you shop and provide store-specific insights."
       },
       "config": {
         "usesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.threesteps.app",
+      "package": "com.pubomaxaccess.app",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#10b981"
+        "backgroundColor": "#ff00ff"
       },
       "permissions": [
         "android.permission.CAMERA",
@@ -59,7 +58,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Three Steps to access your camera to scan product barcodes and take photos."
+          "cameraPermission": "Allow Strago to access your camera to scan product barcodes and take photos."
         }
       ]
     ],

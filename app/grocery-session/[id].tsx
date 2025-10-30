@@ -264,7 +264,7 @@ export default function GrocerySessionDetail() {
         <View style={styles.summaryCard}>
           <View style={styles.summaryRow}>
             <View style={styles.summaryItem}>
-              <ShoppingCart size={24} color="#10b981" />
+              <ShoppingCart size={24} color="#ff00ff" />
               <Text style={styles.summaryValue}>{items.length}</Text>
               <Text style={styles.summaryLabel}>Items</Text>
             </View>
@@ -447,7 +447,7 @@ const styles = StyleSheet.create({
     color: '#ef4444',
   },
   underBudget: {
-    color: '#10b981',
+    color: '#ff00ff',
   },
   actionsCard: {
     backgroundColor: '#fff',
@@ -462,7 +462,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#10b981',
+    backgroundColor: '#ff00ff',
     paddingVertical: 14,
     borderRadius: 8,
     gap: 8,

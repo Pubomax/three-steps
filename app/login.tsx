@@ -9,9 +9,10 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ShoppingCart, Mail, Lock } from 'lucide-react-native';
+import { Mail, Lock } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function LoginScreen() {
@@ -20,7 +21,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const router = useRouter();
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, continueAsGuest } = useAuth();
 
   const handleAuth = async () => {
     if (!email || !password) {
@@ -55,6 +56,18 @@ export default function LoginScreen() {
     }
   };
 
+  const handleGuestMode = async () => {
+    setLoading(true);
+    try {
+      await continueAsGuest();
+      router.replace('/(tabs)/home');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to continue as guest');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -63,11 +76,12 @@ export default function LoginScreen() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <ShoppingCart size={48} color="#10b981" />
-          </View>
-          <Text style={styles.title}>Three Steps</Text>
-          <Text style={styles.subtitle}>Scan. Track. Save.</Text>
+          <Image
+            source={require('@/assets/images/icon.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.subtitle}>Scan - Track - Go</Text>
         </View>
 
         <View style={styles.form}>
@@ -113,6 +127,19 @@ export default function LoginScreen() {
               <Text style={styles.switchLink}>{isSignUp ? 'Sign In' : 'Sign Up'}</Text>
             </TouchableOpacity>
           </View>
+
+          <View style={styles.dividerContainer}>
+            <View style={styles.divider} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.divider} />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.guestButton, loading && styles.buttonDisabled]}
+            onPress={handleGuestMode}
+            disabled={loading}>
+            <Text style={styles.guestButtonText}>Continue as Guest</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.features}>
@@ -153,13 +180,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 40,
   },
-  logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#f0fdf4',
-    alignItems: 'center',
-    justifyContent: 'center',
+  logo: {
+    width: 140,
+    height: 140,
     marginBottom: 16,
   },
   title: {
@@ -196,7 +219,7 @@ const styles = StyleSheet.create({
     color: '#111827',
   },
   primaryButton: {
-    backgroundColor: '#10b981',
+    backgroundColor: '#ff00ff',
     borderRadius: 12,
     height: 50,
     alignItems: 'center',
@@ -225,7 +248,36 @@ const styles = StyleSheet.create({
   switchLink: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#10b981',
+    color: '#ff00ff',
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 24,
+  },
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e5e7eb',
+  },
+  dividerText: {
+    marginHorizontal: 16,
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  guestButton: {
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#ff00ff',
+    borderRadius: 12,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ff00ff',
   },
   features: {
     backgroundColor: '#f9fafb',
@@ -245,7 +297,7 @@ const styles = StyleSheet.create({
   },
   featureBullet: {
     fontSize: 16,
-    color: '#10b981',
+    color: '#ff00ff',
     marginRight: 8,
     fontWeight: '700',
   },

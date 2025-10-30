@@ -86,7 +86,7 @@ export default function StartGroceryFlow({ visible, onClose, onSuccess }: Props)
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: existingSession } = await supabase
+      const { data: existingSession } = await (supabase as any)
         .from('grocery_sessions')
         .select('id, name')
         .eq('user_id', user.id)
@@ -103,7 +103,7 @@ export default function StartGroceryFlow({ visible, onClose, onSuccess }: Props)
         return;
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('grocery_sessions')
         .insert({
           user_id: user.id,
@@ -119,9 +119,18 @@ export default function StartGroceryFlow({ visible, onClose, onSuccess }: Props)
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error creating session:', error);
+        throw error;
+      }
 
-      Alert.alert('Success', 'Grocery session started!');
+      if (!data) {
+        console.error('No data returned from session creation');
+        throw new Error('Failed to create session');
+      }
+
+      console.log('Session created successfully:', data);
+      // Don't show alert - immediately proceed to success callback
       resetForm();
       onSuccess(data.id);
     } catch (error) {
@@ -162,7 +171,7 @@ export default function StartGroceryFlow({ visible, onClose, onSuccess }: Props)
             showsVerticalScrollIndicator={false}>
             {step === 1 && (
               <View style={styles.stepContainer}>
-                <ShoppingCart size={48} color="#10b981" style={styles.stepIcon} />
+                <ShoppingCart size={48} color="#ff00ff" style={styles.stepIcon} />
                 <Text style={styles.stepTitle}>Session Name</Text>
                 <Text style={styles.stepDescription}>
                   Give your shopping session a name (e.g., Weekend Shopping, Walmart Trip)
@@ -179,7 +188,7 @@ export default function StartGroceryFlow({ visible, onClose, onSuccess }: Props)
 
             {step === 2 && (
               <View style={styles.stepContainer}>
-                <Store size={48} color="#10b981" style={styles.stepIcon} />
+                <Store size={48} color="#ff00ff" style={styles.stepIcon} />
                 <Text style={styles.stepTitle}>Store Information</Text>
                 <Text style={styles.stepDescription}>Which store are you shopping at?</Text>
                 <TextInput
@@ -200,7 +209,7 @@ export default function StartGroceryFlow({ visible, onClose, onSuccess }: Props)
 
             {step === 3 && (
               <View style={styles.stepContainer}>
-                <DollarSign size={48} color="#10b981" style={styles.stepIcon} />
+                <DollarSign size={48} color="#ff00ff" style={styles.stepIcon} />
                 <Text style={styles.stepTitle}>Spending Limit</Text>
                 <Text style={styles.stepDescription}>
                   Set a budget for this shopping trip
@@ -218,7 +227,7 @@ export default function StartGroceryFlow({ visible, onClose, onSuccess }: Props)
 
             {step === 4 && (
               <View style={styles.stepContainer}>
-                <Tag size={48} color="#10b981" style={styles.stepIcon} />
+                <Tag size={48} color="#ff00ff" style={styles.stepIcon} />
                 <Text style={styles.stepTitle}>Grocery Type</Text>
                 <Text style={styles.stepDescription}>
                   What type of shopping trip is this?
@@ -318,7 +327,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   progressStepActive: {
-    backgroundColor: '#10b981',
+    backgroundColor: '#ff00ff',
   },
   scrollView: {
     flex: 1,
@@ -367,7 +376,7 @@ const styles = StyleSheet.create({
   },
   typeOptionSelected: {
     backgroundColor: '#d1fae5',
-    borderColor: '#10b981',
+    borderColor: '#ff00ff',
   },
   typeOptionContent: {
     flex: 1,
@@ -388,7 +397,7 @@ const styles = StyleSheet.create({
   typeOptionCheck: {
     width: 24,
     height: 24,
-    backgroundColor: '#10b981',
+    backgroundColor: '#ff00ff',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
@@ -420,7 +429,7 @@ const styles = StyleSheet.create({
   },
   nextButton: {
     flex: 2,
-    backgroundColor: '#10b981',
+    backgroundColor: '#ff00ff',
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,11 +11,21 @@ import {
   Modal,
 } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
-import { Camera, X, Save, ShoppingCart } from 'lucide-react-native';
+import { Camera, X, Save, ShoppingCart, AlertCircle } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { uploadImage } from '@/lib/imageUpload';
+import StartGroceryFlow from '@/components/StartGroceryFlow';
+import type { Database } from '@/types/database';
 
 type ScanStep = 'qr' | 'photo' | 'details';
+
+interface ActiveSession {
+  id: string;
+  name: string;
+  store_name: string;
+  store_location: string;
+  spending_limit: number;
+}
 
 export default function ScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -27,11 +37,87 @@ export default function ScanScreen() {
   const [productName, setProductName] = useState('');
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('1');
-  const [storeName, setStoreName] = useState('');
   const [loading, setLoading] = useState(false);
-  const [addToCart, setAddToCart] = useState(false);
+  const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
+  const [showStartFlow, setShowStartFlow] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const cameraRef = useRef<CameraView>(null);
 
+  useEffect(() => {
+    checkActiveSession();
+  }, []);
+
+  const checkActiveSession = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setCheckingSession(false);
+        return;
+      }
+
+      const { data: session } = await supabase
+        .from('grocery_sessions')
+        .select('id, name, store_name, store_location, spending_limit')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      setActiveSession(session);
+    } catch (error) {
+      console.error('Error checking active session:', error);
+    } finally {
+      setCheckingSession(false);
+    }
+  };
+
+  // Check for active session first, before camera permissions
+  if (checkingSession) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Checking active session...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!activeSession) {
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.section}>
+          <View style={styles.noSessionContainer}>
+            <AlertCircle size={64} color="#ff00ff" />
+            <Text style={styles.noSessionTitle}>No Active Grocery Session</Text>
+            <Text style={styles.noSessionDescription}>
+              You need to start a grocery session before you can scan products.
+              Each session tracks your shopping trip at a specific store with a budget.
+            </Text>
+            
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => setShowStartFlow(true)}>
+              <ShoppingCart size={20} color="#fff" />
+              <Text style={styles.primaryButtonText}>Start Grocery Session</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <StartGroceryFlow
+          visible={showStartFlow}
+          onClose={() => setShowStartFlow(false)}
+          onSuccess={(sessionId) => {
+            setShowStartFlow(false);
+            checkActiveSession();
+          }}
+        />
+      </ScrollView>
+    );
+  }
+
+  // Only check camera permissions if we have an active session
   if (!permission) {
     return <View style={styles.container} />;
   }
@@ -40,13 +126,13 @@ export default function ScanScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.permissionContainer}>
-          <Camera size={64} color="#10b981" />
+          <Camera size={64} color="#ff00ff" />
           <Text style={styles.permissionTitle}>Camera Access Required</Text>
           <Text style={styles.permissionText}>
-            We need camera access to scan QR codes and take product photos
+            We need camera access to scan QR codes and take product photos for your active session: {activeSession.name}
           </Text>
           <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
-            <Text style={styles.primaryButtonText}>Grant Permission</Text>
+            <Text style={styles.primaryButtonText}>Continue</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -80,13 +166,16 @@ export default function ScanScreen() {
     setProductName('');
     setPrice('');
     setQuantity('1');
-    setStoreName('');
-    setAddToCart(false);
   };
 
   const saveProduct = async () => {
-    if (!brandName || !productName || !price || !storeName) {
-      Alert.alert('Error', 'Please fill in all fields');
+    if (!brandName || !productName || !price) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    if (!activeSession) {
+      Alert.alert('Error', 'No active grocery session found. Please start a session first.');
       return;
     }
 
@@ -102,19 +191,23 @@ export default function ScanScreen() {
         return;
       }
 
+      // Get or create store from active session
       let storeId: string;
-      const { data: existingStore } = await supabase
+      const { data: existingStore } = await (supabase as any)
         .from('stores')
         .select('id')
-        .eq('name', storeName)
+        .eq('name', activeSession.store_name)
         .maybeSingle();
 
       if (existingStore) {
         storeId = existingStore.id;
       } else {
-        const { data: newStore, error: storeError } = await supabase
+        const { data: newStore, error: storeError } = await (supabase as any)
           .from('stores')
-          .insert({ name: storeName })
+          .insert({
+            name: activeSession.store_name,
+            address: activeSession.store_location
+          })
           .select('id')
           .single();
 
@@ -123,7 +216,7 @@ export default function ScanScreen() {
       }
 
       let productId: string;
-      const { data: existingProduct } = await supabase
+      const { data: existingProduct } = await (supabase as any)
         .from('products')
         .select('id')
         .eq('qr_code', qrCode)
@@ -144,7 +237,7 @@ export default function ScanScreen() {
           }
         }
 
-        const { data: newProduct, error: productError } = await supabase
+        const { data: newProduct, error: productError } = await (supabase as any)
           .from('products')
           .insert({
             qr_code: qrCode,
@@ -159,7 +252,7 @@ export default function ScanScreen() {
         productId = newProduct.id;
       }
 
-      const { data: previousScans } = await supabase
+      const { data: previousScans } = await (supabase as any)
         .from('scans')
         .select('price, store_id, stores(name)')
         .eq('user_id', user.id)
@@ -167,7 +260,7 @@ export default function ScanScreen() {
         .order('scanned_at', { ascending: false })
         .limit(1);
 
-      const { error: scanError } = await supabase.from('scans').insert({
+      const { error: scanError } = await (supabase as any).from('scans').insert({
         user_id: user.id,
         product_id: productId,
         store_id: storeId,
@@ -176,30 +269,21 @@ export default function ScanScreen() {
 
       if (scanError) throw scanError;
 
-      if (addToCart) {
-        const { data: activeSession } = await supabase
-          .from('grocery_sessions')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('is_active', true)
-          .maybeSingle();
+      // Automatically add to active session cart
+      const { error: cartError } = await (supabase as any).from('cart_items').insert({
+        user_id: user.id,
+        session_id: activeSession.id,
+        product_id: productId,
+        price: parseFloat(price),
+        quantity: parseInt(quantity) || 1,
+      });
 
-        if (activeSession) {
-          const { error: cartError } = await supabase.from('cart_items').insert({
-            user_id: user.id,
-            session_id: activeSession.id,
-            product_id: productId,
-            price: parseFloat(price),
-            quantity: parseInt(quantity) || 1,
-          });
-
-          if (cartError) throw cartError;
-        }
-      }
+      if (cartError) throw cartError;
 
       if (previousScans && previousScans.length > 0) {
-        const previousPrice = previousScans[0].price;
-        const previousStore = (previousScans[0].stores as any)?.name;
+        const previousScan = previousScans[0] as any;
+        const previousPrice = previousScan.price;
+        const previousStore = previousScan.stores?.name;
         const currentPrice = parseFloat(price);
 
         if (currentPrice > previousPrice) {
@@ -215,7 +299,7 @@ export default function ScanScreen() {
         }
       }
 
-      Alert.alert('Success', 'Product saved successfully!', [{ text: 'OK', onPress: resetScan }]);
+      Alert.alert('Success', `Product added to ${activeSession.name}!`, [{ text: 'OK', onPress: resetScan }]);
     } catch (error) {
       console.error('Error saving product:', error);
       Alert.alert('Error', 'Failed to save product. Please try again.');
@@ -273,13 +357,21 @@ export default function ScanScreen() {
     );
   }
 
+  // If we reach here, we have both an active session and camera permissions
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+      {/* Active Session Info */}
+      <View style={styles.sessionInfo}>
+        <Text style={styles.sessionTitle}>Active Session: {activeSession.name}</Text>
+        <Text style={styles.sessionStore}>📍 {activeSession.store_name}</Text>
+        <Text style={styles.sessionBudget}>💰 Budget: ${activeSession.spending_limit}</Text>
+      </View>
+
       {scanStep === 'qr' && (
         <View style={styles.section}>
           <Text style={styles.title}>Scan Product</Text>
           <Text style={styles.description}>
-            Start by scanning the product's QR code or barcode to track its price
+            Scan products to add them to your active grocery session at {activeSession.store_name}
           </Text>
 
           <TouchableOpacity
@@ -366,24 +458,20 @@ export default function ScanScreen() {
             />
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Store Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter store name"
-              value={storeName}
-              onChangeText={setStoreName}
-            />
+          <View style={styles.sessionInfoInline}>
+            <Text style={styles.sessionInfoLabel}>Store:</Text>
+            <Text style={styles.sessionInfoValue}>{activeSession.store_name}</Text>
           </View>
 
-          <TouchableOpacity
-            style={styles.checkboxContainer}
-            onPress={() => setAddToCart(!addToCart)}>
-            <View style={[styles.checkbox, addToCart && styles.checkboxChecked]}>
-              {addToCart && <Text style={styles.checkmark}>✓</Text>}
-            </View>
-            <Text style={styles.checkboxLabel}>Add to active shopping cart</Text>
-          </TouchableOpacity>
+          <View style={styles.sessionInfoInline}>
+            <Text style={styles.sessionInfoLabel}>Session:</Text>
+            <Text style={styles.sessionInfoValue}>{activeSession.name}</Text>
+          </View>
+
+          <View style={styles.autoAddInfo}>
+            <ShoppingCart size={16} color="#10b981" />
+            <Text style={styles.autoAddText}>Will be automatically added to your active session</Text>
+          </View>
 
           <View style={styles.buttonRow}>
             <TouchableOpacity style={styles.secondaryButton} onPress={resetScan}>
@@ -411,6 +499,94 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  noSessionContainer: {
+    alignItems: 'center',
+    padding: 24,
+  },
+  noSessionTitle: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#111827',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  noSessionDescription: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  sessionInfo: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#ff00ff',
+  },
+  sessionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  sessionStore: {
+    fontSize: 16,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  sessionBudget: {
+    fontSize: 16,
+    color: '#10b981',
+    fontWeight: '500',
+  },
+  sessionInfoInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+  },
+  sessionInfoLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginRight: 8,
+  },
+  sessionInfoValue: {
+    fontSize: 14,
+    color: '#6b7280',
+    flex: 1,
+  },
+  autoAddInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#ecfdf5',
+    borderRadius: 8,
+    marginBottom: 24,
+  },
+  autoAddText: {
+    fontSize: 14,
+    color: '#10b981',
+    marginLeft: 8,
+    fontWeight: '500',
   },
   permissionContainer: {
     flex: 1,
@@ -450,7 +626,7 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   scanButton: {
-    backgroundColor: '#10b981',
+    backgroundColor: '#ff00ff',
     borderRadius: 12,
     padding: 20,
     flexDirection: 'row',
@@ -497,9 +673,9 @@ const styles = StyleSheet.create({
     color: '#111827',
   },
   primaryButton: {
-    backgroundColor: '#10b981',
-    borderRadius: 8,
-    padding: 14,
+    backgroundColor: '#ff00ff',
+    borderRadius: 12,
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -511,12 +687,11 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   secondaryButton: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 8,
-    padding: 14,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 12,
+    padding: 16,
     flex: 1,
+    marginRight: 8,
   },
   secondaryButtonText: {
     fontSize: 16,
@@ -524,13 +699,13 @@ const styles = StyleSheet.create({
     color: '#374151',
     textAlign: 'center',
   },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
   flexButton: {
     flex: 2,
+    marginLeft: 8,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    marginTop: 24,
   },
   productImage: {
     width: '100%',
@@ -546,16 +721,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   cameraHeader: {
-    padding: 16,
-    paddingTop: 48,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    padding: 20,
+    paddingTop: 60,
   },
   closeButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 20,
+    padding: 8,
   },
   cameraCenterContainer: {
     flex: 1,
@@ -567,59 +741,35 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
     textAlign: 'center',
-    marginBottom: 24,
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    marginBottom: 40,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: 12,
+    borderRadius: 8,
   },
   scanFrame: {
     width: 250,
     height: 250,
-    borderWidth: 3,
-    borderColor: '#10b981',
-    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#ff00ff',
+    borderRadius: 12,
+    backgroundColor: 'transparent',
   },
   cameraFooter: {
-    padding: 32,
     alignItems: 'center',
+    paddingBottom: 40,
   },
   captureButton: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#fff',
-    padding: 5,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   captureButtonInner: {
-    flex: 1,
+    width: 60,
+    height: 60,
     borderRadius: 30,
-    backgroundColor: '#10b981',
-  },
-  checkboxContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 16,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderColor: '#10b981',
-    borderRadius: 4,
-    marginRight: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxChecked: {
-    backgroundColor: '#10b981',
-  },
-  checkmark: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  checkboxLabel: {
-    fontSize: 15,
-    color: '#374151',
+    backgroundColor: '#fff',
   },
 });

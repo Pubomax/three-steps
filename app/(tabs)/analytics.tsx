@@ -26,7 +26,7 @@ type Analytics = {
   averagePrice: number;
   mostExpensiveProduct: { name: string; price: number } | null;
   cheapestProduct: { name: string; price: number } | null;
-  mostScannedStore: { name: string; count: number } | null;
+  mostScannedStore: { name: string; count: number; totalSpent: number } | null;
   priceIncreases: number;
   priceDecreases: number;
   topProducts: Array<{ name: string; count: number; avgPrice: number }>;
@@ -63,33 +63,45 @@ export default function AnalyticsScreen() {
         return;
       }
 
+      // Get all checkout sessions for this user (including store info)
+      const { data: checkoutSessions } = await supabase
+        .from('checkout_sessions')
+        .select('id, created_at, store_name, store_location, total_amount')
+        .eq('user_id', user.id);
+
+      if (!checkoutSessions || checkoutSessions.length === 0) {
+        setLoading(false);
+        return;
+      }
+
+      const sessionIds = checkoutSessions.map((s) => s.id);
+
+      // Get all checkout items (only finalized purchases)
       const { data: scans } = await supabase
-        .from('scans')
+        .from('checkout_items')
         .select(
           `
           id,
           price,
-          scanned_at,
+          quantity,
           product_id,
+          session_id,
           products (
-            name
-          ),
-          stores (
             name
           )
         `
         )
-        .eq('user_id', user.id)
-        .order('scanned_at', { ascending: false });
+        .in('session_id', sessionIds);
 
       if (!scans || scans.length === 0) {
         setLoading(false);
         return;
       }
 
-      const totalSpent = scans.reduce((sum, scan) => sum + scan.price, 0);
-      const totalScans = scans.length;
-      const averagePrice = totalSpent / totalScans;
+      // Calculate totals accounting for quantity
+      const totalSpent = scans.reduce((sum, scan) => sum + scan.price * scan.quantity, 0);
+      const totalItems = scans.reduce((sum, scan) => sum + scan.quantity, 0);
+      const averagePrice = totalSpent / totalItems;
 
       const sortedByPrice = [...scans].sort((a, b) => b.price - a.price);
       const mostExpensiveProduct = sortedByPrice[0]
@@ -105,30 +117,47 @@ export default function AnalyticsScreen() {
           }
         : null;
 
+      // Calculate store statistics from checkout sessions
       const storeCount: Record<string, number> = {};
-      scans.forEach((scan) => {
-        const storeName = (scan.stores as any)?.name || 'Unknown';
+      const storeSpending: Record<string, number> = {};
+
+      checkoutSessions.forEach((session) => {
+        const storeName = session.store_name || 'Unknown Store';
         storeCount[storeName] = (storeCount[storeName] || 0) + 1;
+        storeSpending[storeName] = (storeSpending[storeName] || 0) + (session.total_amount || 0);
       });
+
       const mostScannedStoreEntry = Object.entries(storeCount).sort((a, b) => b[1] - a[1])[0];
       const mostScannedStore = mostScannedStoreEntry
-        ? { name: mostScannedStoreEntry[0], count: mostScannedStoreEntry[1] }
+        ? {
+            name: mostScannedStoreEntry[0],
+            count: mostScannedStoreEntry[1],
+            totalSpent: storeSpending[mostScannedStoreEntry[0]]
+          }
         : null;
 
+      // Build price history from checkout sessions and items
       const productPriceHistory: Record<
         string,
-        Array<{ price: number; scanned_at: string; name: string }>
+        Array<{ price: number; purchased_at: string; name: string }>
       > = {};
+
       scans.forEach((scan) => {
         const productId = scan.product_id;
+        const session = checkoutSessions.find((s) => s.id === scan.session_id);
+
         if (!productPriceHistory[productId]) {
           productPriceHistory[productId] = [];
         }
-        productPriceHistory[productId].push({
-          price: scan.price,
-          scanned_at: scan.scanned_at,
-          name: (scan.products as any)?.name || 'Unknown',
-        });
+
+        // Add entry for each quantity purchased
+        for (let i = 0; i < scan.quantity; i++) {
+          productPriceHistory[productId].push({
+            price: scan.price,
+            purchased_at: session?.created_at || new Date().toISOString(),
+            name: (scan.products as any)?.name || 'Unknown',
+          });
+        }
       });
 
       let priceIncreases = 0;
@@ -136,7 +165,7 @@ export default function AnalyticsScreen() {
 
       Object.values(productPriceHistory).forEach((history) => {
         const sorted = history.sort(
-          (a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime()
+          (a, b) => new Date(b.purchased_at).getTime() - new Date(a.purchased_at).getTime()
         );
         if (sorted.length > 1) {
           const currentPrice = sorted[0].price;
@@ -157,8 +186,8 @@ export default function AnalyticsScreen() {
         if (!productCounts[productId]) {
           productCounts[productId] = { count: 0, totalPrice: 0, name: productName };
         }
-        productCounts[productId].count++;
-        productCounts[productId].totalPrice += scan.price;
+        productCounts[productId].count += scan.quantity;
+        productCounts[productId].totalPrice += scan.price * scan.quantity;
       });
 
       const topProducts = Object.entries(productCounts)
@@ -179,7 +208,7 @@ export default function AnalyticsScreen() {
         );
         if (history && history.length > 1) {
           const sorted = history.sort(
-            (a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime()
+            (a, b) => new Date(b.purchased_at).getTime() - new Date(a.purchased_at).getTime()
           );
           const currentPrice = sorted[0].price;
           const avgHistoricalPrice =
@@ -241,7 +270,7 @@ export default function AnalyticsScreen() {
         <BarChart3 size={64} color="#d1d5db" />
         <Text style={styles.emptyTitle}>No Analytics Yet</Text>
         <Text style={styles.emptyText}>
-          Start scanning products to see insights about your shopping habits
+          Complete a checkout to see insights about your shopping habits
         </Text>
       </ScrollView>
     );
@@ -255,7 +284,7 @@ export default function AnalyticsScreen() {
       <View style={styles.statsGrid}>
         <View style={styles.statCard}>
           <View style={styles.statIconContainer}>
-            <DollarSign size={24} color="#10b981" />
+            <DollarSign size={24} color="#ff00ff" />
           </View>
           <Text style={styles.statValue}>${analytics.totalSpent.toFixed(2)}</Text>
           <Text style={styles.statLabel}>Total Spent</Text>
@@ -266,7 +295,7 @@ export default function AnalyticsScreen() {
             <ShoppingBag size={24} color="#3b82f6" />
           </View>
           <Text style={styles.statValue}>{analytics.totalScans}</Text>
-          <Text style={styles.statLabel}>Scans</Text>
+          <Text style={styles.statLabel}>Items Purchased</Text>
         </View>
 
         <View style={styles.statCard}>
@@ -283,7 +312,8 @@ export default function AnalyticsScreen() {
               <Store size={24} color="#8b5cf6" />
             </View>
             <Text style={styles.statValue}>{analytics.mostScannedStore.count}</Text>
-            <Text style={styles.statLabel}>{analytics.mostScannedStore.name}</Text>
+            <Text style={styles.statLabel} numberOfLines={1}>{analytics.mostScannedStore.name}</Text>
+            <Text style={styles.statSubLabel}>${analytics.mostScannedStore.totalSpent.toFixed(2)} spent</Text>
           </View>
         )}
       </View>
@@ -297,7 +327,7 @@ export default function AnalyticsScreen() {
             <Text style={styles.trendLabel}>Increases</Text>
           </View>
           <View style={styles.trendCard}>
-            <TrendingDown size={20} color="#10b981" />
+            <TrendingDown size={20} color="#ff00ff" />
             <Text style={styles.trendValue}>{analytics.priceDecreases}</Text>
             <Text style={styles.trendLabel}>Decreases</Text>
           </View>
@@ -335,7 +365,7 @@ export default function AnalyticsScreen() {
               ]}>
               <View style={styles.recommendationHeader}>
                 {rec.type === 'keep' ? (
-                  <ThumbsUp size={20} color="#10b981" />
+                  <ThumbsUp size={20} color="#ff00ff" />
                 ) : (
                   <ThumbsDown size={20} color="#ef4444" />
                 )}
@@ -446,6 +476,12 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     textAlign: 'center',
   },
+  statSubLabel: {
+    fontSize: 12,
+    color: '#9ca3af',
+    textAlign: 'center',
+    marginTop: 4,
+  },
   section: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -511,7 +547,7 @@ const styles = StyleSheet.create({
   productPrice: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#10b981',
+    color: '#ff00ff',
   },
   recommendationCard: {
     borderRadius: 12,
@@ -521,7 +557,7 @@ const styles = StyleSheet.create({
   },
   keepCard: {
     backgroundColor: '#f0fdf4',
-    borderColor: '#10b981',
+    borderColor: '#ff00ff',
   },
   leaveCard: {
     backgroundColor: '#fef2f2',
@@ -539,7 +575,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   keepBadge: {
-    color: '#10b981',
+    color: '#ff00ff',
   },
   leaveBadge: {
     color: '#ef4444',
@@ -583,6 +619,6 @@ const styles = StyleSheet.create({
   priceRangePrice: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#10b981',
+    color: '#ff00ff',
   },
 });

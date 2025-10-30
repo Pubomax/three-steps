@@ -6,7 +6,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 function RootLayoutNav() {
-  const { user, loading } = useAuth();
+  const { user, loading, isGuest } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -14,13 +14,16 @@ function RootLayoutNav() {
     if (loading) return;
 
     const inAuthGroup = segments[0] === '(tabs)';
+    const isAuthenticated = user || isGuest;
 
-    if (!user && inAuthGroup) {
+    if (!isAuthenticated && inAuthGroup) {
+      // Not logged in and not guest - redirect to login
       router.replace('/login');
-    } else if (user && !inAuthGroup) {
+    } else if (isAuthenticated && !inAuthGroup) {
+      // Logged in or guest mode - redirect to app
       router.replace('/(tabs)/home');
     }
-  }, [user, segments, loading]);
+  }, [user, isGuest, segments, loading]);
 
   return (
     <Stack screenOptions={{ headerShown: false }}>

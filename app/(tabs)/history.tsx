@@ -237,7 +237,7 @@ export default function HistoryScreen() {
         <Text style={styles.statsTitle}>All Time Stats</Text>
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <ShoppingBag size={24} color="#10b981" />
+            <ShoppingBag size={24} color="#ff00ff" />
             <Text style={styles.statValue}>{checkoutSessions.length}</Text>
             <Text style={styles.statLabel}>Trips</Text>
           </View>
@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#10b981',
+    backgroundColor: '#ff00ff',
     paddingVertical: 16,
     borderRadius: 12,
     marginBottom: 20,
@@ -377,7 +377,7 @@ const styles = StyleSheet.create({
   statCurrency: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#10b981',
+    color: '#ff00ff',
     marginBottom: -8,
   },
   statValue: {
@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
   sessionTotal: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#10b981',
+    color: '#ff00ff',
   },
   sessionDetails: {
     marginTop: 16,
@@ -500,7 +500,7 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
   },
   activeSessionCard: {
-    borderColor: '#10b981',
+    borderColor: '#ff00ff',
     borderWidth: 2,
   },
   sessionCardContent: {

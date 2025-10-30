@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
   },
   resetButton: {
-    backgroundColor: '#10b981',
+    backgroundColor: '#ff00ff',
     borderRadius: 8,
     paddingVertical: 14,
     paddingHorizontal: 24,
