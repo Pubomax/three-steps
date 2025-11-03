@@ -204,8 +204,16 @@ export default function HistoryScreen() {
           grocerySessions.map((session) => (
             <TouchableOpacity
               key={session.id}
-              style={[styles.sessionCard, session.is_active && styles.activeSessionCard]}
-              onPress={() => router.push(`/grocery-session/${session.id}`)}>
+              style={[styles.grocerySessionCard, session.is_active && styles.activeSessionCard]}
+              onPress={() => {
+                if (session.is_active) {
+                  // Active sessions go to cart screen
+                  router.push('/(tabs)');
+                } else {
+                  // Completed sessions go to session details page
+                  router.push(`/grocery-session/${session.id}`);
+                }
+              }}>
               <View style={styles.sessionCardContent}>
                 <View style={styles.sessionCardLeft}>
                   <Text style={styles.sessionCardTitle}>{session.name}</Text>
@@ -491,7 +499,7 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     textAlign: 'center',
   },
-  sessionCard: {
+  grocerySessionCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,

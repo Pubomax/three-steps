@@ -24,6 +24,8 @@ export default function LoginScreen() {
   const { signIn, signUp, continueAsGuest } = useAuth();
 
   const handleAuth = async () => {
+    console.log('handleAuth called', { email, isSignUp });
+    
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
@@ -36,21 +38,25 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
+      console.log('Attempting', isSignUp ? 'sign up' : 'sign in');
       const { error } = isSignUp ? await signUp(email, password) : await signIn(email, password);
 
+      console.log('Auth result:', { error: error?.message });
+
       if (error) {
-        Alert.alert('Error', error.message);
+        Alert.alert('Error', error.message || 'Authentication failed');
       } else {
         if (isSignUp) {
-          Alert.alert('Success', 'Account created! You can now sign in.');
+          Alert.alert('Success', 'Account created! Check your email to confirm your account, then sign in.');
           setIsSignUp(false);
           setPassword('');
         } else {
           router.replace('/(tabs)/home');
         }
       }
-    } catch (error) {
-      Alert.alert('Error', 'An unexpected error occurred');
+    } catch (error: any) {
+      console.error('Auth error:', error);
+      Alert.alert('Error', error?.message || 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }

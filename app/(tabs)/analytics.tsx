@@ -8,43 +8,59 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import {
+  ArrowLeft,
+  BarChart3,
   TrendingUp,
-  TrendingDown,
   DollarSign,
   ShoppingBag,
   Store,
-  AlertCircle,
-  ThumbsUp,
-  ThumbsDown,
-  BarChart3,
 } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Analytics = {
+  avgSpending: number;
+  monthlyTrips: number;
   totalSpent: number;
   totalScans: number;
-  averagePrice: number;
-  mostExpensiveProduct: { name: string; price: number } | null;
-  cheapestProduct: { name: string; price: number } | null;
-  mostScannedStore: { name: string; count: number; totalSpent: number } | null;
-  priceIncreases: number;
-  priceDecreases: number;
-  topProducts: Array<{ name: string; count: number; avgPrice: number }>;
-  recommendations: Array<{ type: 'keep' | 'leave'; product: string; reason: string }>;
+  spendingBreakdown: Array<{ category: string; percentage: number; amount: number }>;
+  storeTrips: Array<{ name: string; trips: number; isTop: boolean }>;
+  priceComparison: Array<{ store: string; price: number; isLowest: boolean }>;
+  avgPrice: number;
+  savings: number;
 };
 
 export default function AnalyticsScreen() {
+  const { isGuest } = useAuth();
+  const router = useRouter();
   const [analytics, setAnalytics] = useState<Analytics>({
+    avgSpending: 0,
+    monthlyTrips: 0,
     totalSpent: 0,
     totalScans: 0,
-    averagePrice: 0,
-    mostExpensiveProduct: null,
-    cheapestProduct: null,
-    mostScannedStore: null,
-    priceIncreases: 0,
-    priceDecreases: 0,
-    topProducts: [],
-    recommendations: [],
+    spendingBreakdown: [
+      { category: 'Produce', percentage: 35, amount: 0 },
+      { category: 'Dairy & Eggs', percentage: 25, amount: 0 },
+      { category: 'Meat & Seafood', percentage: 20, amount: 0 },
+      { category: 'Pantry', percentage: 15, amount: 0 },
+      { category: 'Other', percentage: 5, amount: 0 },
+    ],
+    storeTrips: [
+      { name: 'FreshCo', trips: 5, isTop: true },
+      { name: 'Metro', trips: 3, isTop: false },
+      { name: 'SuperValu', trips: 2, isTop: false },
+      { name: 'Organic Barn', trips: 2, isTop: false },
+    ],
+    priceComparison: [
+      { store: 'Metro', price: 24.50, isLowest: false },
+      { store: 'FreshCo', price: 22.80, isLowest: true },
+      { store: 'Organic Barn', price: 28.15, isLowest: false },
+      { store: 'SuperValu', price: 25.90, isLowest: false },
+    ],
+    avgPrice: 25.34,
+    savings: 5.35,
   });
   const [loading, setLoading] = useState(false);
 
@@ -55,6 +71,12 @@ export default function AnalyticsScreen() {
   const loadAnalytics = async () => {
     setLoading(true);
     try {
+      if (isGuest) {
+        // For guest users, use mock data or limited analytics
+        setLoading(false);
+        return;
+      }
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -63,197 +85,67 @@ export default function AnalyticsScreen() {
         return;
       }
 
-      // Get all checkout sessions for this user (including store info)
+      // Get all checkout sessions for this user
       const { data: checkoutSessions } = await supabase
         .from('checkout_sessions')
         .select('id, created_at, store_name, store_location, total_amount')
         .eq('user_id', user.id);
 
-      if (!checkoutSessions || checkoutSessions.length === 0) {
+      // Also get grocery sessions as fallback
+      const { data: grocerySessions } = await supabase
+        .from('grocery_sessions')
+        .select('id, created_at, store_name, store_location, spending_limit')
+        .eq('user_id', user.id);
+
+      // Use checkout sessions if available, otherwise use grocery sessions
+      const sessions = checkoutSessions && checkoutSessions.length > 0 ? checkoutSessions : grocerySessions;
+
+      if (!sessions || sessions.length === 0) {
         setLoading(false);
         return;
       }
 
-      const sessionIds = checkoutSessions.map((s) => s.id);
+      // Calculate basic stats
+      const totalSpent = sessions.reduce((sum, session: any) => {
+        return sum + (session.total_amount || session.spending_limit || 0);
+      }, 0);
+      const avgSpending = totalSpent / sessions.length;
+      
+      // Calculate monthly trips (last 30 days)
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const monthlyTrips = sessions.filter(
+        (session: any) => new Date(session.created_at) >= thirtyDaysAgo
+      ).length;
 
-      // Get all checkout items (only finalized purchases)
-      const { data: scans } = await supabase
-        .from('checkout_items')
-        .select(
-          `
-          id,
-          price,
-          quantity,
-          product_id,
-          session_id,
-          products (
-            name
-          )
-        `
-        )
-        .in('session_id', sessionIds);
-
-      if (!scans || scans.length === 0) {
-        setLoading(false);
-        return;
-      }
-
-      // Calculate totals accounting for quantity
-      const totalSpent = scans.reduce((sum, scan) => sum + scan.price * scan.quantity, 0);
-      const totalItems = scans.reduce((sum, scan) => sum + scan.quantity, 0);
-      const averagePrice = totalSpent / totalItems;
-
-      const sortedByPrice = [...scans].sort((a, b) => b.price - a.price);
-      const mostExpensiveProduct = sortedByPrice[0]
-        ? {
-            name: (sortedByPrice[0].products as any)?.name || 'Unknown',
-            price: sortedByPrice[0].price,
-          }
-        : null;
-      const cheapestProduct = sortedByPrice[sortedByPrice.length - 1]
-        ? {
-            name: (sortedByPrice[sortedByPrice.length - 1].products as any)?.name || 'Unknown',
-            price: sortedByPrice[sortedByPrice.length - 1].price,
-          }
-        : null;
-
-      // Calculate store statistics from checkout sessions
+      // Calculate store trips
       const storeCount: Record<string, number> = {};
-      const storeSpending: Record<string, number> = {};
-
-      checkoutSessions.forEach((session) => {
+      sessions.forEach((session: any) => {
         const storeName = session.store_name || 'Unknown Store';
         storeCount[storeName] = (storeCount[storeName] || 0) + 1;
-        storeSpending[storeName] = (storeSpending[storeName] || 0) + (session.total_amount || 0);
       });
 
-      const mostScannedStoreEntry = Object.entries(storeCount).sort((a, b) => b[1] - a[1])[0];
-      const mostScannedStore = mostScannedStoreEntry
-        ? {
-            name: mostScannedStoreEntry[0],
-            count: mostScannedStoreEntry[1],
-            totalSpent: storeSpending[mostScannedStoreEntry[0]]
-          }
-        : null;
+      const storeTrips = Object.entries(storeCount)
+        .map(([name, trips]) => ({ name, trips, isTop: false }))
+        .sort((a, b) => b.trips - a.trips);
+      
+      if (storeTrips.length > 0) {
+        storeTrips[0].isTop = true;
+      }
 
-      // Build price history from checkout sessions and items
-      const productPriceHistory: Record<
-        string,
-        Array<{ price: number; purchased_at: string; name: string }>
-      > = {};
-
-      scans.forEach((scan) => {
-        const productId = scan.product_id;
-        const session = checkoutSessions.find((s) => s.id === scan.session_id);
-
-        if (!productPriceHistory[productId]) {
-          productPriceHistory[productId] = [];
-        }
-
-        // Add entry for each quantity purchased
-        for (let i = 0; i < scan.quantity; i++) {
-          productPriceHistory[productId].push({
-            price: scan.price,
-            purchased_at: session?.created_at || new Date().toISOString(),
-            name: (scan.products as any)?.name || 'Unknown',
-          });
-        }
-      });
-
-      let priceIncreases = 0;
-      let priceDecreases = 0;
-
-      Object.values(productPriceHistory).forEach((history) => {
-        const sorted = history.sort(
-          (a, b) => new Date(b.purchased_at).getTime() - new Date(a.purchased_at).getTime()
-        );
-        if (sorted.length > 1) {
-          const currentPrice = sorted[0].price;
-          const previousPrice = sorted[1].price;
-          if (currentPrice > previousPrice) {
-            priceIncreases++;
-          } else if (currentPrice < previousPrice) {
-            priceDecreases++;
-          }
-        }
-      });
-
-      const productCounts: Record<string, { count: number; totalPrice: number; name: string }> =
-        {};
-      scans.forEach((scan) => {
-        const productId = scan.product_id;
-        const productName = (scan.products as any)?.name || 'Unknown';
-        if (!productCounts[productId]) {
-          productCounts[productId] = { count: 0, totalPrice: 0, name: productName };
-        }
-        productCounts[productId].count += scan.quantity;
-        productCounts[productId].totalPrice += scan.price * scan.quantity;
-      });
-
-      const topProducts = Object.entries(productCounts)
-        .map(([id, data]) => ({
-          name: data.name,
-          count: data.count,
-          avgPrice: data.totalPrice / data.count,
-        }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 5);
-
-      const recommendations: Array<{ type: 'keep' | 'leave'; product: string; reason: string }> =
-        [];
-
-      topProducts.forEach((product) => {
-        const history = Object.values(productPriceHistory).find(
-          (h) => h[0]?.name === product.name
-        );
-        if (history && history.length > 1) {
-          const sorted = history.sort(
-            (a, b) => new Date(b.purchased_at).getTime() - new Date(a.purchased_at).getTime()
-          );
-          const currentPrice = sorted[0].price;
-          const avgHistoricalPrice =
-            sorted.slice(1).reduce((sum, h) => sum + h.price, 0) / (sorted.length - 1);
-
-          if (currentPrice > avgHistoricalPrice * 1.15) {
-            recommendations.push({
-              type: 'leave',
-              product: product.name,
-              reason: `Price increased by ${(((currentPrice - avgHistoricalPrice) / avgHistoricalPrice) * 100).toFixed(0)}%`,
-            });
-          } else if (currentPrice < avgHistoricalPrice * 0.9) {
-            recommendations.push({
-              type: 'keep',
-              product: product.name,
-              reason: `Great price, ${(((avgHistoricalPrice - currentPrice) / avgHistoricalPrice) * 100).toFixed(0)}% below average`,
-            });
-          }
-        }
-
-        if (product.avgPrice > averagePrice * 1.5) {
-          recommendations.push({
-            type: 'leave',
-            product: product.name,
-            reason: `High cost item, ${((product.avgPrice / averagePrice) * 100 - 100).toFixed(0)}% above average`,
-          });
-        }
-      });
-
-      const uniqueRecommendations = Array.from(
-        new Map(recommendations.map((r) => [r.product, r])).values()
-      ).slice(0, 6);
-
-      setAnalytics({
+      // Update analytics with real data
+      setAnalytics(prev => ({
+        ...prev,
+        avgSpending,
+        monthlyTrips,
         totalSpent,
-        totalScans,
-        averagePrice,
-        mostExpensiveProduct,
-        cheapestProduct,
-        mostScannedStore,
-        priceIncreases,
-        priceDecreases,
-        topProducts,
-        recommendations: uniqueRecommendations,
-      });
+        totalScans: sessions.length,
+        storeTrips: storeTrips.slice(0, 4),
+        spendingBreakdown: prev.spendingBreakdown.map(item => ({
+          ...item,
+          amount: (totalSpent * item.percentage) / 100,
+        })),
+      }));
     } catch (error) {
       console.error('Error loading analytics:', error);
     } finally {
@@ -261,165 +153,187 @@ export default function AnalyticsScreen() {
     }
   };
 
-  if (analytics.totalScans === 0) {
+  if (analytics.totalScans === 0 && !isGuest && !loading) {
     return (
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.emptyContainer}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadAnalytics} />}>
-        <BarChart3 size={64} color="#d1d5db" />
-        <Text style={styles.emptyTitle}>No Analytics Yet</Text>
-        <Text style={styles.emptyText}>
-          Complete a checkout to see insights about your shopping habits
-        </Text>
-      </ScrollView>
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <ArrowLeft size={24} color="#333333" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Analytics</Text>
+        </View>
+
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.emptyContainer}
+          refreshControl={<RefreshControl refreshing={loading} onRefresh={loadAnalytics} />}
+        >
+          <BarChart3 size={64} color="#d1d5db" />
+          <Text style={styles.emptyTitle}>No Analytics Yet</Text>
+          <Text style={styles.emptyText}>
+            Complete a checkout to see insights about your shopping habits
+          </Text>
+        </ScrollView>
+      </View>
     );
   }
 
+  const maxPrice = Math.max(...analytics.priceComparison.map(item => item.price));
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.scrollContent}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={loadAnalytics} />}>
-      <View style={styles.statsGrid}>
-        <View style={styles.statCard}>
-          <View style={styles.statIconContainer}>
-            <DollarSign size={24} color="#ff00ff" />
-          </View>
-          <Text style={styles.statValue}>${analytics.totalSpent.toFixed(2)}</Text>
-          <Text style={styles.statLabel}>Total Spent</Text>
-        </View>
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <ArrowLeft size={24} color="#333333" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Analytics</Text>
+      </View>
 
-        <View style={styles.statCard}>
-          <View style={styles.statIconContainer}>
-            <ShoppingBag size={24} color="#3b82f6" />
-          </View>
-          <Text style={styles.statValue}>{analytics.totalScans}</Text>
-          <Text style={styles.statLabel}>Items Purchased</Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <View style={styles.statIconContainer}>
-            <TrendingUp size={24} color="#f59e0b" />
-          </View>
-          <Text style={styles.statValue}>${analytics.averagePrice.toFixed(2)}</Text>
-          <Text style={styles.statLabel}>Avg Price</Text>
-        </View>
-
-        {analytics.mostScannedStore && (
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadAnalytics} />}
+      >
+        {/* Stats Grid */}
+        <View style={styles.statsGrid}>
           <View style={styles.statCard}>
-            <View style={styles.statIconContainer}>
-              <Store size={24} color="#8b5cf6" />
-            </View>
-            <Text style={styles.statValue}>{analytics.mostScannedStore.count}</Text>
-            <Text style={styles.statLabel} numberOfLines={1}>{analytics.mostScannedStore.name}</Text>
-            <Text style={styles.statSubLabel}>${analytics.mostScannedStore.totalSpent.toFixed(2)} spent</Text>
+            <Text style={styles.statLabel}>Avg. Spending</Text>
+            <Text style={styles.statValue}>${analytics.avgSpending.toFixed(2)}</Text>
+            <Text style={styles.statSubLabel}>per trip</Text>
           </View>
-        )}
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Price Trends</Text>
-        <View style={styles.trendRow}>
-          <View style={styles.trendCard}>
-            <TrendingUp size={20} color="#ef4444" />
-            <Text style={styles.trendValue}>{analytics.priceIncreases}</Text>
-            <Text style={styles.trendLabel}>Increases</Text>
-          </View>
-          <View style={styles.trendCard}>
-            <TrendingDown size={20} color="#ff00ff" />
-            <Text style={styles.trendValue}>{analytics.priceDecreases}</Text>
-            <Text style={styles.trendLabel}>Decreases</Text>
+          
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Monthly Trips</Text>
+            <Text style={styles.statValue}>{analytics.monthlyTrips}</Text>
+            <Text style={styles.statSubLabel}>this month</Text>
           </View>
         </View>
-      </View>
 
-      {analytics.topProducts.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Most Purchased</Text>
-          {analytics.topProducts.map((product, index) => (
-            <View key={index} style={styles.productRow}>
-              <View style={styles.productInfo}>
-                <Text style={styles.productName}>{product.name}</Text>
-                <Text style={styles.productCount}>{product.count} purchases</Text>
+        {/* Spending Breakdown */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Spending Breakdown</Text>
+          <View style={styles.breakdownContainer}>
+            {analytics.spendingBreakdown.map((item, index) => (
+              <View key={index} style={styles.breakdownItem}>
+                <View style={styles.breakdownHeader}>
+                  <Text style={styles.breakdownCategory}>{item.category}</Text>
+                  <Text style={styles.breakdownPercentage}>{item.percentage}%</Text>
+                </View>
+                <View style={styles.progressBarContainer}>
+                  <View style={[styles.progressBar, { width: `${item.percentage}%` }]} />
+                </View>
               </View>
-              <Text style={styles.productPrice}>${product.avgPrice.toFixed(2)}</Text>
-            </View>
-          ))}
+            ))}
+          </View>
         </View>
-      )}
 
-      {analytics.recommendations.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Smart Recommendations</Text>
-          <Text style={styles.sectionDescription}>
-            Based on your shopping habits and price history
-          </Text>
-
-          {analytics.recommendations.map((rec, index) => (
-            <View
-              key={index}
-              style={[
-                styles.recommendationCard,
-                rec.type === 'keep' ? styles.keepCard : styles.leaveCard,
-              ]}>
-              <View style={styles.recommendationHeader}>
-                {rec.type === 'keep' ? (
-                  <ThumbsUp size={20} color="#ff00ff" />
-                ) : (
-                  <ThumbsDown size={20} color="#ef4444" />
-                )}
-                <Text
-                  style={[
-                    styles.recommendationBadge,
-                    rec.type === 'keep' ? styles.keepBadge : styles.leaveBadge,
-                  ]}>
-                  {rec.type === 'keep' ? 'KEEP' : 'CONSIDER ALTERNATIVES'}
-                </Text>
+        {/* Trips Per Store */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Trips Per Store</Text>
+          <View style={styles.storeTripsContainer}>
+            {analytics.storeTrips.map((store, index) => (
+              <View key={index}>
+                <View style={styles.storeRow}>
+                  <Text style={styles.storeName}>{store.name}</Text>
+                  {store.isTop ? (
+                    <View style={styles.topStoreBadge}>
+                      <Text style={styles.topStoreText}>{store.trips} trips</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.storeTrips}>{store.trips} trips</Text>
+                  )}
+                </View>
+                {index < analytics.storeTrips.length - 1 && <View style={styles.divider} />}
               </View>
-              <Text style={styles.recommendationProduct}>{rec.product}</Text>
-              <Text style={styles.recommendationReason}>{rec.reason}</Text>
-            </View>
-          ))}
+            ))}
+          </View>
         </View>
-      )}
 
-      {analytics.mostExpensiveProduct && analytics.cheapestProduct && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Price Range</Text>
+        {/* Price Comparison */}
+        <View style={styles.card}>
+          <View style={styles.priceComparisonHeader}>
+            <Text style={styles.cardTitle}>Price Comparison by Store</Text>
+            <Text style={styles.priceComparisonSubtitle}>
+              Total for 5 common items in your cart
+            </Text>
+          </View>
 
-          <View style={styles.priceRangeCard}>
-            <View style={styles.priceRangeItem}>
-              <Text style={styles.priceRangeLabel}>Most Expensive</Text>
-              <Text style={styles.priceRangeProduct}>{analytics.mostExpensiveProduct.name}</Text>
-              <Text style={styles.priceRangePrice}>
-                ${analytics.mostExpensiveProduct.price.toFixed(2)}
-              </Text>
+          {/* Bar Chart */}
+          <View style={styles.chartContainer}>
+            {analytics.priceComparison.map((item, index) => {
+              const height = (item.price / maxPrice) * 100;
+              return (
+                <View key={index} style={styles.chartBar}>
+                  <Text style={styles.chartPrice}>${item.price.toFixed(2)}</Text>
+                  <View style={styles.barContainer}>
+                    <View style={[styles.bar, { height: `${height}%` }]} />
+                  </View>
+                  <Text style={styles.chartLabel}>{item.store}</Text>
+                </View>
+              );
+            })}
+          </View>
+
+          {/* Best Value Card */}
+          <View style={styles.bestValueCard}>
+            <View style={styles.bestValueLeft}>
+              <Text style={styles.bestValueLabel}>Best Value</Text>
+              <Text style={styles.bestValueStore}>FreshCo</Text>
             </View>
+            <Text style={styles.bestValuePrice}>$22.80</Text>
+          </View>
 
-            <View style={styles.priceRangeDivider} />
-
-            <View style={styles.priceRangeItem}>
-              <Text style={styles.priceRangeLabel}>Most Affordable</Text>
-              <Text style={styles.priceRangeProduct}>{analytics.cheapestProduct.name}</Text>
-              <Text style={styles.priceRangePrice}>
-                ${analytics.cheapestProduct.price.toFixed(2)}
-              </Text>
+          {/* Summary Stats */}
+          <View style={styles.summaryStats}>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Average price</Text>
+              <Text style={styles.summaryValue}>${analytics.avgPrice.toFixed(2)}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>You could save</Text>
+              <Text style={styles.savingsValue}>${analytics.savings.toFixed(2)}</Text>
             </View>
           </View>
         </View>
-      )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: '#F5F5F5',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingTop: 16,
+    backgroundColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333333',
+    flex: 1,
+    textAlign: 'center',
+    marginRight: 24,
+  },
+  scrollView: {
+    flex: 1,
   },
   scrollContent: {
-    padding: 20,
+    padding: 16,
+    gap: 16,
   },
   emptyContainer: {
     flex: 1,
@@ -430,195 +344,223 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 24,
     fontWeight: '600',
-    color: '#111827',
+    color: '#333333',
     marginTop: 16,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 16,
-    color: '#6b7280',
+    color: '#666666',
     textAlign: 'center',
     lineHeight: 24,
   },
   statsGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 20,
+    gap: 16,
   },
   statCard: {
-    backgroundColor: '#fff',
+    flex: 1,
+    backgroundColor: '#ffffff',
     borderRadius: 12,
     padding: 16,
-    flex: 1,
-    minWidth: '45%',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  statIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#f9fafb',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
+  statLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666666',
+    marginBottom: 4,
   },
   statValue: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
+    color: '#333333',
+    marginBottom: 2,
   },
   statSubLabel: {
     fontSize: 12,
-    color: '#9ca3af',
-    textAlign: 'center',
-    marginTop: 4,
+    color: '#666666',
   },
-  section: {
-    backgroundColor: '#fff',
+  card: {
+    backgroundColor: '#ffffff',
     borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  sectionTitle: {
+  cardTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  sectionDescription: {
-    fontSize: 14,
-    color: '#6b7280',
+    color: '#333333',
     marginBottom: 16,
   },
-  trendRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 12,
+  breakdownContainer: {
+    gap: 16,
   },
-  trendCard: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
+  breakdownItem: {
+    gap: 4,
   },
-  trendValue: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#111827',
-    marginVertical: 8,
-  },
-  trendLabel: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  productRow: {
+  breakdownHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  productInfo: {
-    flex: 1,
-  },
-  productName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 2,
-  },
-  productCount: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  productPrice: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ff00ff',
-  },
-  recommendationCard: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 2,
-  },
-  keepCard: {
-    backgroundColor: '#f0fdf4',
-    borderColor: '#ff00ff',
-  },
-  leaveCard: {
-    backgroundColor: '#fef2f2',
-    borderColor: '#ef4444',
-  },
-  recommendationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  recommendationBadge: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  keepBadge: {
-    color: '#ff00ff',
-  },
-  leaveBadge: {
-    color: '#ef4444',
-  },
-  recommendationProduct: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
     marginBottom: 4,
   },
-  recommendationReason: {
+  breakdownCategory: {
     fontSize: 14,
-    color: '#6b7280',
-    lineHeight: 20,
+    fontWeight: '500',
+    color: '#333333',
   },
-  priceRangeCard: {
+  breakdownPercentage: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666666',
+  },
+  progressBarContainer: {
+    height: 10,
+    backgroundColor: 'rgba(255, 0, 255, 0.1)',
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#ff00ff',
+    borderRadius: 5,
+  },
+  storeTripsContainer: {
+    gap: 12,
+  },
+  storeRow: {
     flexDirection: 'row',
-    marginTop: 12,
-  },
-  priceRangeItem: {
-    flex: 1,
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  priceRangeDivider: {
-    width: 1,
-    backgroundColor: '#e5e7eb',
-    marginHorizontal: 16,
-  },
-  priceRangeLabel: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 8,
-  },
-  priceRangeProduct: {
+  storeName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 8,
-    textAlign: 'center',
+    fontWeight: '500',
+    color: '#333333',
   },
-  priceRangePrice: {
-    fontSize: 24,
+  topStoreBadge: {
+    backgroundColor: 'rgba(255, 0, 255, 0.1)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  topStoreText: {
+    fontSize: 16,
     fontWeight: '700',
     color: '#ff00ff',
+  },
+  storeTrips: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#666666',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(102, 102, 102, 0.2)',
+  },
+  priceComparisonHeader: {
+    marginBottom: 32,
+  },
+  priceComparisonSubtitle: {
+    fontSize: 14,
+    color: '#666666',
+    marginTop: 4,
+  },
+  chartContainer: {
+    flexDirection: 'row',
+    height: 200,
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderLeftWidth: 1,
+    borderColor: 'rgba(102, 102, 102, 0.2)',
+    marginBottom: 24,
+  },
+  chartBar: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 8,
+  },
+  chartPrice: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#333333',
+  },
+  barContainer: {
+    flex: 1,
+    width: '80%',
+    justifyContent: 'flex-end',
+  },
+  bar: {
+    backgroundColor: '#ff00ff',
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+    minHeight: 20,
+  },
+  chartLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#666666',
+    textAlign: 'center',
+  },
+  bestValueCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 0, 255, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  bestValueLeft: {
+    gap: 2,
+  },
+  bestValueLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#ff00ff',
+  },
+  bestValueStore: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#333333',
+  },
+  bestValuePrice: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ff00ff',
+  },
+  summaryStats: {
+    gap: 8,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: '#666666',
+  },
+  summaryValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333333',
+  },
+  savingsValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#10b981',
   },
 });

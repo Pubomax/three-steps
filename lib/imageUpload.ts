@@ -19,13 +19,18 @@ export async function uploadImage(imageUri: string, bucket: string = 'product-im
       encoding: 'base64',
     });
 
-    // Convert base64 to blob
-    const blob = base64ToBlob(base64, `image/${fileExtension}`);
+    // Decode base64 to binary
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
 
-    // Upload to Supabase Storage
+    // Upload to Supabase Storage using ArrayBuffer
     const { data, error } = await supabase.storage
       .from(bucket)
-      .upload(filePath, blob, {
+      .upload(filePath, byteArray, {
         contentType: `image/${fileExtension}`,
         cacheControl: '3600',
         upsert: false,
@@ -44,28 +49,6 @@ export async function uploadImage(imageUri: string, bucket: string = 'product-im
     console.error('Error uploading image:', error);
     throw error;
   }
-}
-
-/**
- * Convert base64 string to Blob
- */
-function base64ToBlob(base64: string, mimeType: string): Blob {
-  const byteCharacters = atob(base64);
-  const byteArrays = [];
-
-  for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-    const slice = byteCharacters.slice(offset, offset + 512);
-    const byteNumbers = new Array(slice.length);
-
-    for (let i = 0; i < slice.length; i++) {
-      byteNumbers[i] = slice.charCodeAt(i);
-    }
-
-    const byteArray = new Uint8Array(byteNumbers);
-    byteArrays.push(byteArray);
-  }
-
-  return new Blob(byteArrays, { type: mimeType });
 }
 
 /**

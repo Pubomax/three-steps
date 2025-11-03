@@ -11,6 +11,8 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Trash2, ShoppingCart, DollarSign, CheckCircle } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '@/contexts/AuthContext';
 
 type CartItem = {
   id: string;
@@ -39,9 +41,12 @@ type GrocerySession = {
 export default function GrocerySessionDetail() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
+  const { isGuest } = useAuth();
   const [session, setSession] = useState<GrocerySession | null>(null);
   const [items, setItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(false);
+  
+  const isGuestSession = typeof id === 'string' && id.startsWith('guest-');
 
   useEffect(() => {
     loadSession();
@@ -50,14 +55,27 @@ export default function GrocerySessionDetail() {
 
   const loadSession = async () => {
     try {
-      const { data, error } = await supabase
-        .from('grocery_sessions')
-        .select('*')
-        .eq('id', id)
-        .single();
+      if (isGuestSession) {
+        const sessionsJson = await AsyncStorage.getItem('guest_sessions');
+        if (sessionsJson) {
+          const sessions = JSON.parse(sessionsJson);
+          const guestSession = sessions.find((s: any) => s.id === id);
+          if (guestSession) {
+            setSession(guestSession);
+          } else {
+            Alert.alert('Error', 'Session not found');
+          }
+        }
+      } else {
+        const { data, error } = await supabase
+          .from('grocery_sessions')
+          .select('*')
+          .eq('id', id)
+          .single();
 
-      if (error) throw error;
-      setSession(data);
+        if (error) throw error;
+        setSession(data);
+      }
     } catch (error) {
       console.error('Error loading session:', error);
       Alert.alert('Error', 'Failed to load session');
@@ -67,24 +85,29 @@ export default function GrocerySessionDetail() {
   const loadItems = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('cart_items')
-        .select(
+      if (isGuestSession) {
+        const cartJson = await AsyncStorage.getItem(`guest_cart_${id}`);
+        setItems(cartJson ? JSON.parse(cartJson) : []);
+      } else {
+        const { data, error } = await supabase
+          .from('cart_items')
+          .select(
+            `
+            id,
+            product_id,
+            price,
+            quantity,
+            products (
+              name,
+              brand
+            )
           `
-          id,
-          product_id,
-          price,
-          quantity,
-          products (
-            name,
-            brand
           )
-        `
-        )
-        .eq('session_id', id);
+          .eq('session_id', id);
 
-      if (error) throw error;
-      setItems(data || []);
+        if (error) throw error;
+        setItems(data || []);
+      }
     } catch (error) {
       console.error('Error loading items:', error);
     } finally {

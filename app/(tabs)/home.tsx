@@ -1,129 +1,198 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking, Alert, useWindowDimensions, Image } from 'react-native';
-import { ShoppingCart, CheckCircle, TrendingUp, Clock, MessageCircle } from 'lucide-react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
+import { QrCode, ShoppingCart, CheckCircle, TrendingUp, Clock, Store, ShoppingBag } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { supabase } from '@/lib/supabase';
 import StartGroceryFlow from '@/components/StartGroceryFlow';
-import { useIsIPad } from '@/hooks/useIsIPad';
+import { useAuth } from '@/contexts/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+type CheckoutSession = {
+  id: string;
+  total_amount: number;
+  item_count: number;
+  completed_at: string;
+  store_name: string | null;
+  store_location: string | null;
+};
 
 export default function HomeScreen() {
   const [showStartFlow, setShowStartFlow] = useState(false);
+  const [recentTrips, setRecentTrips] = useState<CheckoutSession[]>([]);
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const isIPad = useIsIPad();
-  const { width } = useWindowDimensions();
+  const { user, isGuest } = useAuth();
+
+  useEffect(() => {
+    loadRecentTrips();
+  }, []);
+
+  const loadRecentTrips = async () => {
+    setLoading(true);
+    try {
+      if (isGuest) {
+        // For guest users, we don't have persistent history
+        setRecentTrips([]);
+      } else {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          setLoading(false);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('checkout_sessions')
+          .select('id, total_amount, item_count, completed_at, store_name, store_location')
+          .eq('user_id', user.id)
+          .order('completed_at', { ascending: false })
+          .limit(3);
+
+        if (error) throw error;
+        setRecentTrips(data || []);
+      }
+    } catch (error) {
+      console.error('Error loading recent trips:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleGroceryStarted = (sessionId: string) => {
     setShowStartFlow(false);
-    router.push(`/grocery-session/${sessionId}`);
+    router.push('/(tabs)/grocery');
   };
 
-  const handleFeedback = async () => {
-    const email = 'feedback@strago.app';
-    const subject = 'Strago MVP Feedback';
-    const body = 'Hi! Here is my feedback:\n\n';
-
-    const mailtoUrl = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-
-    try {
-      const canOpen = await Linking.canOpenURL(mailtoUrl);
-      if (canOpen) {
-        await Linking.openURL(mailtoUrl);
-      } else {
-        Alert.alert(
-          'Email Not Available',
-          `Please send your feedback to: ${email}`,
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (error) {
-      Alert.alert(
-        'Error',
-        `Please send your feedback to: ${email}`,
-        [{ text: 'OK' }]
-      );
+  const getUserName = () => {
+    if (isGuest) return 'Guest';
+    if (user?.email) {
+      const name = user.email.split('@')[0];
+      return name.charAt(0).toUpperCase() + name.slice(1);
     }
+    return 'User';
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  const getStoreIcon = (storeName: string | null) => {
+    // Return different colored icons for different stores
+    const colors = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
+    const hash = storeName ? storeName.length % colors.length : 0;
+    return colors[hash];
   };
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={[
-        styles.scrollContent,
-        isIPad && styles.scrollContentIPad,
-        isIPad && width > 900 && styles.scrollContentIPadLarge
-      ]}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadRecentTrips} />}
+      >
+        {/* Header with Profile */}
         <View style={styles.header}>
-          <Image
-            source={require('@/assets/images/icon.png')}
-            style={[styles.logo, isIPad && styles.logoIPad]}
-            resizeMode="contain"
-          />
-          <Text style={[styles.subtitle, isIPad && styles.subtitleIPad]}>Scan, track, and save</Text>
-        </View>
-
-        <View style={[styles.featuresSection, isIPad && styles.featuresSectionIPad]}>
-          <View style={[styles.featureItem, isIPad && styles.featureItemIPad]}>
-            <View style={[styles.iconCircle, isIPad && styles.iconCircleIPad]}>
-              <ShoppingCart size={isIPad ? 32 : 24} color="#ff00ff" />
+          <View style={styles.profileSection}>
+            <View style={styles.profilePicture}>
+              <Text style={styles.profileInitial}>{getUserName().charAt(0)}</Text>
             </View>
-            <View style={styles.featureText}>
-              <Text style={styles.featureTitle}>Track Your Cart</Text>
-              <Text style={styles.featureDescription}>
-                Add items as you shop and stay within budget
-              </Text>
-            </View>
-          </View>
-
-          <View style={[styles.featureItem, isIPad && styles.featureItemIPad]}>
-            <View style={styles.iconCircle}>
-              <CheckCircle size={isIPad ? 32 : 24} color="#ff00ff" />
-            </View>
-            <View style={styles.featureText}>
-              <Text style={styles.featureTitle}>Set Spending Limits</Text>
-              <Text style={styles.featureDescription}>
-                Get alerts when you're approaching your budget
-              </Text>
-            </View>
-          </View>
-
-          <View style={[styles.featureItem, isIPad && styles.featureItemIPad]}>
-            <View style={styles.iconCircle}>
-              <TrendingUp size={isIPad ? 32 : 24} color="#ff00ff" />
-            </View>
-            <View style={styles.featureText}>
-              <Text style={styles.featureTitle}>View Analytics</Text>
-              <Text style={styles.featureDescription}>
-                Track spending patterns and shopping habits
-              </Text>
-            </View>
-          </View>
-
-          <View style={[styles.featureItem, isIPad && styles.featureItemIPad]}>
-            <View style={styles.iconCircle}>
-              <Clock size={isIPad ? 32 : 24} color="#ff00ff" />
-            </View>
-            <View style={styles.featureText}>
-              <Text style={styles.featureTitle}>Purchase History</Text>
-              <Text style={styles.featureDescription}>
-                Review past shopping trips and receipts
-              </Text>
-            </View>
+            <Text style={styles.welcomeText}>Welcome back, {getUserName()}!</Text>
           </View>
         </View>
 
-        <TouchableOpacity
-          style={styles.startButton}
-          onPress={() => setShowStartFlow(true)}>
-          <Text style={styles.startButtonText}>Start Grocery</Text>
-        </TouchableOpacity>
-
-        <View style={styles.feedbackSection}>
-          <Text style={styles.feedbackTitle}>Help Us Improve</Text>
-          <Text style={styles.feedbackDescription}>
-            This is an early MVP. Your feedback helps us build a better app!
+        {/* Start Scanning Card */}
+        <View style={styles.startScanningCard}>
+          <View style={styles.scanIconContainer}>
+            <QrCode size={48} color="#ff00ff" />
+          </View>
+          <Text style={styles.startScanningTitle}>Start Grocery Session</Text>
+          <Text style={styles.startScanningDescription}>
+            Tap here to start scanning items and track your spending in real-time.
           </Text>
-          <TouchableOpacity style={styles.feedbackButton} onPress={handleFeedback}>
-            <MessageCircle size={20} color="#ff00ff" />
-            <Text style={styles.feedbackButtonText}>Send Feedback</Text>
+          <TouchableOpacity
+            style={styles.startScanningButton}
+            onPress={() => setShowStartFlow(true)}
+          >
+            <Text style={styles.startScanningButtonText}>Start Scanning</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Recent Trips */}
+        <Text style={styles.sectionTitle}>Recent Trips</Text>
+        <View style={styles.recentTripsContainer}>
+          {recentTrips.length === 0 ? (
+            <View style={styles.emptyTrips}>
+              <ShoppingBag size={32} color="#9ca3af" />
+              <Text style={styles.emptyTripsText}>No recent trips</Text>
+              <Text style={styles.emptyTripsSubtext}>Start your first grocery session!</Text>
+            </View>
+          ) : (
+            recentTrips.map((trip) => (
+              <View key={trip.id} style={styles.tripCard}>
+                <View style={styles.tripCardLeft}>
+                  <View style={[styles.storeIcon, { backgroundColor: getStoreIcon(trip.store_name) }]}>
+                    <Store size={24} color="#fff" />
+                  </View>
+                  <View style={styles.tripInfo}>
+                    <Text style={styles.storeName}>
+                      {trip.store_name || 'Unknown Store'}
+                    </Text>
+                    <Text style={styles.tripDate}>{formatDate(trip.completed_at)}</Text>
+                  </View>
+                </View>
+                <Text style={styles.tripAmount}>${trip.total_amount.toFixed(2)}</Text>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* Features Section */}
+        <View style={styles.featuresGrid}>
+          <View style={styles.featureCard}>
+            <View style={styles.featureIcon}>
+              <ShoppingCart size={24} color="#ff00ff" />
+            </View>
+            <Text style={styles.featureTitle}>Track Your Cart</Text>
+            <Text style={styles.featureDescription}>
+              Add items as you shop and stay within budget
+            </Text>
+          </View>
+
+          <View style={styles.featureCard}>
+            <View style={styles.featureIcon}>
+              <CheckCircle size={24} color="#ff00ff" />
+            </View>
+            <Text style={styles.featureTitle}>Set Spending Limits</Text>
+            <Text style={styles.featureDescription}>
+              Get alerts when you're approaching your budget
+            </Text>
+          </View>
+
+          <View style={styles.featureCard}>
+            <View style={styles.featureIcon}>
+              <TrendingUp size={24} color="#ff00ff" />
+            </View>
+            <Text style={styles.featureTitle}>View Analytics</Text>
+            <Text style={styles.featureDescription}>
+              Track spending patterns and shopping habits
+            </Text>
+          </View>
+
+          <View style={styles.featureCard}>
+            <View style={styles.featureIcon}>
+              <Clock size={24} color="#ff00ff" />
+            </View>
+            <Text style={styles.featureTitle}>Purchase History</Text>
+            <Text style={styles.featureDescription}>
+              Review past shopping trips and receipts
+            </Text>
+          </View>
         </View>
       </ScrollView>
 
@@ -139,159 +208,213 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: '#f5f7f8',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 24,
-  },
-  scrollContentIPad: {
-    padding: 48,
-    maxWidth: 900,
-    alignSelf: 'center',
-    width: '100%',
-  },
-  scrollContentIPadLarge: {
-    maxWidth: 1200,
+    paddingBottom: 100, // Account for tab bar
   },
   header: {
-    marginBottom: 32,
-    marginTop: 16,
+    backgroundColor: '#f5f7f8',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  profileSection: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 16,
   },
-  logo: {
-    width: 120,
-    height: 120,
-    marginBottom: 8,
+  profilePicture: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ff00ff',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  logoIPad: {
-    width: 160,
-    height: 160,
-    marginBottom: 12,
-  },
-  appName: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  appNameIPad: {
-    fontSize: 40,
-  },
-  subtitle: {
+  profileInitial: {
+    color: '#fff',
     fontSize: 18,
+    fontWeight: '700',
+  },
+  welcomeText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1f2937',
+    flex: 1,
+  },
+  startScanningCard: {
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginBottom: 24,
+    borderRadius: 12,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  scanIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#ff00ff10',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  startScanningTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: 8,
+  },
+  startScanningDescription: {
+    fontSize: 16,
     color: '#6b7280',
-    fontWeight: '400',
     textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 16,
   },
-  subtitleIPad: {
-    fontSize: 20,
+  startScanningButton: {
+    backgroundColor: '#ff00ff',
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+    width: '100%',
+    maxWidth: 480,
+    alignItems: 'center',
+    shadowColor: '#ff00ff',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  featuresSection: {
-    marginBottom: 32,
+  startScanningButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  featuresSectionIPad: {
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1f2937',
+    marginHorizontal: 16,
+    marginBottom: 8,
+  },
+  recentTripsContainer: {
+    marginHorizontal: 16,
+    marginBottom: 24,
+    gap: 8,
+  },
+  emptyTrips: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  emptyTripsText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6b7280',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptyTripsSubtext: {
+    fontSize: 14,
+    color: '#9ca3af',
+  },
+  tripCard: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 72,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  tripCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 16,
+  },
+  storeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tripInfo: {
+    flex: 1,
+  },
+  storeName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 2,
+  },
+  tripDate: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  tripAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1f2937',
+  },
+  featuresGrid: {
+    marginHorizontal: 16,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 24,
+    gap: 12,
   },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 24,
-  },
-  featureItemIPad: {
+  featureCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
     flex: 1,
     minWidth: '45%',
-    marginBottom: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  iconCircle: {
+  featureIcon: {
     width: 48,
     height: 48,
     borderRadius: 24,
     backgroundColor: '#d1fae5',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
-  },
-  iconCircleIPad: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-  },
-  featureText: {
-    flex: 1,
-    paddingTop: 4,
+    marginBottom: 12,
   },
   featureTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
-    color: '#111827',
+    color: '#1f2937',
     marginBottom: 4,
   },
   featureDescription: {
-    fontSize: 15,
-    color: '#6b7280',
-    lineHeight: 22,
-  },
-  startButton: {
-    backgroundColor: '#ff00ff',
-    paddingVertical: 18,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
-    marginBottom: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  startButtonText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  feedbackSection: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    marginTop: 24,
-    marginBottom: 32,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  feedbackTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  feedbackDescription: {
     fontSize: 14,
     color: '#6b7280',
-    marginBottom: 16,
     lineHeight: 20,
-  },
-  feedbackButton: {
-    backgroundColor: '#f0fdf4',
-    borderWidth: 1,
-    borderColor: '#ff00ff',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  feedbackButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ff00ff',
   },
 });
