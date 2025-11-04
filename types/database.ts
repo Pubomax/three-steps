@@ -152,7 +152,7 @@ export type Database = {
           grocery_type: 'regular' | 'special_event' | 'bulk' | 'weekly' | 'monthly';
           started_at: string | null;
           ended_at: string | null;
-          status: 'created' | 'in_progress' | 'completed';
+          status: 'created' | 'in_progress' | 'completed' | 'cancelled';
           created_at: string;
           updated_at: string;
         };
@@ -167,7 +167,7 @@ export type Database = {
           grocery_type?: 'regular' | 'special_event' | 'bulk' | 'weekly' | 'monthly';
           started_at?: string | null;
           ended_at?: string | null;
-          status?: 'created' | 'in_progress' | 'completed';
+          status?: 'created' | 'in_progress' | 'completed' | 'cancelled';
           created_at?: string;
           updated_at?: string;
         };
@@ -182,7 +182,7 @@ export type Database = {
           grocery_type?: 'regular' | 'special_event' | 'bulk' | 'weekly' | 'monthly';
           started_at?: string | null;
           ended_at?: string | null;
-          status?: 'created' | 'in_progress' | 'completed';
+          status?: 'created' | 'in_progress' | 'completed' | 'cancelled';
           created_at?: string;
           updated_at?: string;
         };
@@ -257,7 +257,7 @@ export type Database = {
     };
     Enums: {
       grocery_type_enum: 'regular' | 'special_event' | 'bulk' | 'weekly' | 'monthly';
-      session_status: 'created' | 'in_progress' | 'completed';
+      session_status: 'created' | 'in_progress' | 'completed' | 'cancelled';
     };
     CompositeTypes: {
       [_ in never]: never;

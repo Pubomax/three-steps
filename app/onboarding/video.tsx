@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Video } from 'expo-av';
+import { Video, ResizeMode } from 'expo-av';
 import { useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
@@ -22,7 +22,7 @@ export default function OnboardingVideo() {
           ref={player}
           source={{ uri: 'https://d23dyxeqlo5psv.cloudfront.net/big_buck_bunny.mp4' }}
           style={styles.video}
-          resizeMode={Video.RESIZE_MODE_COVER}
+          resizeMode={ResizeMode.COVER}
           shouldPlay
           isLooping
           useNativeControls

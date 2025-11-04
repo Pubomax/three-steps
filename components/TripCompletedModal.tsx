@@ -32,6 +32,7 @@ export default function TripCompletedModal({
   onClose,
   onStartNew,
   onViewHistory,
+  onViewSummary,
 }: Props) {
   const pieces = 60;
   const anims = useMemo(

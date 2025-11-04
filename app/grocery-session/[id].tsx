@@ -11,6 +11,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Trash2, ShoppingCart, DollarSign, CheckCircle } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
+import type { TablesInsert, TablesUpdate } from '@/types/database';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -122,14 +123,14 @@ export default function GrocerySessionDetail() {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      await supabase
-        .from('grocery_sessions')
-        .update({ is_active: false })
+      await (supabase
+        .from('grocery_sessions') as any)
+        .update({ is_active: false } as TablesUpdate<'grocery_sessions'>)
         .eq('user_id', user.id);
 
-      await supabase
-        .from('grocery_sessions')
-        .update({ is_active: true })
+      await (supabase
+        .from('grocery_sessions') as any)
+        .update({ is_active: true } as TablesUpdate<'grocery_sessions'>)
         .eq('id', id);
 
       Alert.alert('Success', 'This session is now active');
@@ -162,12 +163,12 @@ export default function GrocerySessionDetail() {
 
               const endTime = new Date().toISOString();
 
-              await supabase
-                .from('grocery_sessions')
+              await (supabase
+                .from('grocery_sessions') as any)
                 .update({
                   ended_at: endTime,
                   status: 'completed',
-                })
+                } as TablesUpdate<'grocery_sessions'>)
                 .eq('id', id);
 
               const { data: currentSession } = await supabase
@@ -176,8 +177,8 @@ export default function GrocerySessionDetail() {
                 .eq('id', id)
                 .single();
 
-              const { data: checkoutSession, error: sessionError } = await supabase
-                .from('checkout_sessions')
+              const checkoutInsertRes = await (supabase
+                .from('checkout_sessions') as any)
                 .insert({
                   user_id: user.id,
                   total_amount: total,
@@ -185,9 +186,11 @@ export default function GrocerySessionDetail() {
                   store_name: (currentSession as any)?.store_name ?? null,
                   store_location: (currentSession as any)?.store_location ?? null,
                   grocery_session_id: id as string,
-                })
+                } as TablesInsert<'checkout_sessions'>)
                 .select('id')
                 .single();
+              const checkoutSession = checkoutInsertRes.data as { id: string } | null;
+              const sessionError = checkoutInsertRes.error as Error | null;
 
               if (sessionError || !checkoutSession) throw sessionError;
 
@@ -196,10 +199,10 @@ export default function GrocerySessionDetail() {
                 product_id: item.product_id,
                 price: item.price,
                 quantity: item.quantity,
-              }));
+              })) as TablesInsert<'checkout_items'>[];
 
-              const { error: itemsError } = await supabase
-                .from('checkout_items')
+              const { error: itemsError } = await (supabase
+                .from('checkout_items') as any)
                 .insert(checkoutItems);
 
               if (itemsError) throw itemsError;

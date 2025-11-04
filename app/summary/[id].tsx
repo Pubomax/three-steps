@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Share } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import type { Tables } from '@/types/database';
 import { ArrowLeft, Share2 } from 'lucide-react-native';
 
 type SummaryItem = {
@@ -35,6 +36,21 @@ export default function SummaryScreen() {
 
   const load = async () => {
     if (!id) return;
+    type CheckoutItemRow = {
+      id: string;
+      price: number;
+      quantity: number;
+      products: { name: string; brand: string | null; image_url: string | null };
+    };
+    type CheckoutSessionRow = {
+      id: string;
+      total_amount: number;
+      item_count: number;
+      store_name: string | null;
+      completed_at: string;
+      checkout_items: CheckoutItemRow[] | null;
+    };
+
     const { data, error } = await supabase
       .from('checkout_sessions')
       .select(`
@@ -51,7 +67,7 @@ export default function SummaryScreen() {
         )
       `)
       .eq('id', id)
-      .maybeSingle();
+      .maybeSingle<CheckoutSessionRow>();
 
     if (!error && data) {
       setSummary({

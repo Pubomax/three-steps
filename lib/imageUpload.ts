@@ -48,7 +48,7 @@ export async function uploadImage(imageUri: string, bucket: string = 'product-im
 
     const result = await FileSystem.uploadAsync(uploadUrl, uploadUri, {
       httpMethod: 'POST',
-      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      uploadType: (FileSystem as any).FileSystemUploadType?.BINARY_CONTENT ?? 0,
       headers: {
         Authorization: `Bearer ${supabaseAnonKey}`,
         'Content-Type': mimeType,

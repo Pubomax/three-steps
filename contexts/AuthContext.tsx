@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { Session, User } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+import type { TablesInsert } from '@/types/database';
 
 type AuthContextType = {
   session: Session | null;
@@ -146,8 +147,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const guestSessions = JSON.parse(sessionsJson);
       for (const s of guestSessions) {
-        const { data: createdSession } = await supabase
-          .from('grocery_sessions')
+        const createdSessionRes = await (supabase
+          .from('grocery_sessions') as any)
           .insert({
             user_id: user.id,
             name: s.name,
@@ -158,9 +159,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             is_active: !!s.is_active,
             started_at: s.started_at ?? new Date().toISOString(),
             status: s.status ?? 'in_progress',
-          })
+          } as TablesInsert<'grocery_sessions'>)
           .select('id')
           .single();
+        const createdSession = createdSessionRes.data as { id: string } | null;
 
         if (!createdSession) continue;
 
@@ -172,35 +174,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Attempt to find existing product by QR; if not present, create minimal product
             let productId = item.product_id;
             if (item.product_id && typeof item.product_id === 'string') {
-              const { data: existingProduct } = await supabase
-                .from('products')
+              const existingProductRes = await (supabase
+                .from('products') as any)
                 .select('id')
                 .eq('qr_code', item.product_id)
                 .maybeSingle();
-              if (existingProduct) {
-                productId = existingProduct.id;
+              if (existingProductRes.data) {
+                productId = (existingProductRes.data as { id: string }).id;
               } else {
-                const { data: newProduct } = await supabase
-                  .from('products')
+                const newProductRes = await (supabase
+                  .from('products') as any)
                   .insert({
                     qr_code: item.product_id,
                     brand: item.products?.brand ?? null,
                     name: item.products?.name ?? 'Unknown',
                     image_url: item.products?.image_url ?? null,
-                  })
+                  } as TablesInsert<'products'>)
                   .select('id')
                   .single();
-                if (newProduct) productId = newProduct.id;
+                if (newProductRes.data) productId = (newProductRes.data as { id: string }).id;
               }
             }
 
-            await supabase.from('cart_items').insert({
+            await (supabase.from('cart_items') as any).insert({
               user_id: user.id,
               session_id: createdSession.id,
               product_id: productId,
               price: item.price,
               quantity: item.quantity || 1,
-            });
+            } as TablesInsert<'cart_items'>);
           }
         }
       }
