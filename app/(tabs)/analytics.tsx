@@ -40,27 +40,11 @@ export default function AnalyticsScreen() {
     monthlyTrips: 0,
     totalSpent: 0,
     totalScans: 0,
-    spendingBreakdown: [
-      { category: 'Produce', percentage: 35, amount: 0 },
-      { category: 'Dairy & Eggs', percentage: 25, amount: 0 },
-      { category: 'Meat & Seafood', percentage: 20, amount: 0 },
-      { category: 'Pantry', percentage: 15, amount: 0 },
-      { category: 'Other', percentage: 5, amount: 0 },
-    ],
-    storeTrips: [
-      { name: 'FreshCo', trips: 5, isTop: true },
-      { name: 'Metro', trips: 3, isTop: false },
-      { name: 'SuperValu', trips: 2, isTop: false },
-      { name: 'Organic Barn', trips: 2, isTop: false },
-    ],
-    priceComparison: [
-      { store: 'Metro', price: 24.50, isLowest: false },
-      { store: 'FreshCo', price: 22.80, isLowest: true },
-      { store: 'Organic Barn', price: 28.15, isLowest: false },
-      { store: 'SuperValu', price: 25.90, isLowest: false },
-    ],
-    avgPrice: 25.34,
-    savings: 5.35,
+    spendingBreakdown: [],
+    storeTrips: [],
+    priceComparison: [],
+    avgPrice: 0,
+    savings: 0,
   });
   const [loading, setLoading] = useState(false);
 
@@ -86,19 +70,10 @@ export default function AnalyticsScreen() {
       }
 
       // Get all checkout sessions for this user
-      const { data: checkoutSessions } = await supabase
+      const { data: sessions } = await supabase
         .from('checkout_sessions')
-        .select('id, created_at, store_name, store_location, total_amount')
+        .select('id, created_at, store_name, total_amount, item_count')
         .eq('user_id', user.id);
-
-      // Also get grocery sessions as fallback
-      const { data: grocerySessions } = await supabase
-        .from('grocery_sessions')
-        .select('id, created_at, store_name, store_location, spending_limit')
-        .eq('user_id', user.id);
-
-      // Use checkout sessions if available, otherwise use grocery sessions
-      const sessions = checkoutSessions && checkoutSessions.length > 0 ? checkoutSessions : grocerySessions;
 
       if (!sessions || sessions.length === 0) {
         setLoading(false);
@@ -107,10 +82,10 @@ export default function AnalyticsScreen() {
 
       // Calculate basic stats
       const totalSpent = sessions.reduce((sum, session: any) => {
-        return sum + (session.total_amount || session.spending_limit || 0);
+        return sum + (session.total_amount || 0);
       }, 0);
-      const avgSpending = totalSpent / sessions.length;
-      
+      const avgSpending = sessions.length > 0 ? totalSpent / sessions.length : 0;
+
       // Calculate monthly trips (last 30 days)
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -118,34 +93,70 @@ export default function AnalyticsScreen() {
         (session: any) => new Date(session.created_at) >= thirtyDaysAgo
       ).length;
 
-      // Calculate store trips
+      // Store trips and spending share by store (top 5)
       const storeCount: Record<string, number> = {};
+      const storeTotals: Record<string, number> = {};
       sessions.forEach((session: any) => {
         const storeName = session.store_name || 'Unknown Store';
         storeCount[storeName] = (storeCount[storeName] || 0) + 1;
+        storeTotals[storeName] = (storeTotals[storeName] || 0) + (session.total_amount || 0);
       });
 
       const storeTrips = Object.entries(storeCount)
         .map(([name, trips]) => ({ name, trips, isTop: false }))
         .sort((a, b) => b.trips - a.trips);
-      
-      if (storeTrips.length > 0) {
-        storeTrips[0].isTop = true;
+      if (storeTrips.length > 0) storeTrips[0].isTop = true;
+
+      const topStoreTotals = Object.entries(storeTotals)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+      const spendingBreakdown = topStoreTotals.map(([name, amount]) => ({
+        category: name,
+        percentage: totalSpent > 0 ? Math.round((amount / totalSpent) * 100) : 0,
+        amount,
+      }));
+
+      // Price comparison using recent scans: average item price per store
+      const { data: scans } = await supabase
+        .from('scans')
+        .select('price, stores(name)')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      let avgPrice = 0;
+      let priceComparison: Array<{ store: string; price: number; isLowest: boolean }> = [];
+      if (scans && scans.length > 0) {
+        const storePrice: Record<string, { sum: number; count: number }> = {};
+        let sumAll = 0;
+        scans.forEach((s: any) => {
+          const store = (s.stores as any)?.name || 'Unknown Store';
+          storePrice[store] = storePrice[store] || { sum: 0, count: 0 };
+          storePrice[store].sum += s.price || 0;
+          storePrice[store].count += 1;
+          sumAll += s.price || 0;
+        });
+        avgPrice = scans.length > 0 ? sumAll / scans.length : 0;
+        priceComparison = Object.entries(storePrice)
+          .map(([store, v]) => ({ store, price: v.count ? v.sum / v.count : 0, isLowest: false }))
+          .sort((a, b) => a.price - b.price)
+          .slice(0, 4);
+        if (priceComparison.length > 0) priceComparison[0].isLowest = true;
       }
 
-      // Update analytics with real data
-      setAnalytics(prev => ({
-        ...prev,
+      const savings = priceComparison.length > 0 ? Math.max(0, avgPrice - priceComparison[0].price) : 0;
+
+      setAnalytics({
         avgSpending,
         monthlyTrips,
         totalSpent,
         totalScans: sessions.length,
         storeTrips: storeTrips.slice(0, 4),
-        spendingBreakdown: prev.spendingBreakdown.map(item => ({
-          ...item,
-          amount: (totalSpent * item.percentage) / 100,
-        })),
-      }));
+        spendingBreakdown,
+        priceComparison,
+        avgPrice,
+        savings,
+      });
     } catch (error) {
       console.error('Error loading analytics:', error);
     } finally {

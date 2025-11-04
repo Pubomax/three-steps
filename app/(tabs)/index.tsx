@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/contexts/AuthContext';
 import Svg, { Circle } from 'react-native-svg';
 import { Database } from '@/types/database';
+import TripCompletedModal from '@/components/TripCompletedModal';
+import StartGroceryFlow from '@/components/StartGroceryFlow';
+import { useFocusEffect } from '@react-navigation/native';
 
 type CartItem = {
   id: string;
@@ -49,11 +52,22 @@ export default function CartScreen() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [activeSession, setActiveSession] = useState<GrocerySession | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [completedInfo, setCompletedInfo] = useState<{ total: number; items: number; store?: string | null; summaryId?: string }>({ total: 0, items: 0 });
+  const [showStartFlow, setShowStartFlow] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     loadActiveSession();
   }, []);
+
+  // Ensure active session and cart refresh when the tab regains focus
+  useFocusEffect(
+    useCallback(() => {
+      loadActiveSession();
+      // loadCart will run after activeSession updates due to the existing effect
+    }, [isGuest])
+  );
 
   useEffect(() => {
     if (activeSession) {
@@ -254,7 +268,8 @@ export default function CartScreen() {
                 await AsyncStorage.setItem('guest_sessions', JSON.stringify(updated));
                 
                 setCheckoutLoading(false);
-                Alert.alert('Success', 'Checkout completed!');
+                setCompletedInfo({ total: cartTotal, items: cartItems.length, store: activeSession.store_name });
+                setShowCompleted(true);
                 setActiveSession(null);
                 setCartItems([]);
                 await loadActiveSession();
@@ -307,7 +322,8 @@ export default function CartScreen() {
                   .eq('id', activeSession.id);
 
                 setCheckoutLoading(false);
-                Alert.alert('Success', 'Checkout completed!');
+                setCompletedInfo({ total: cartTotal, items: cartItems.length, store: activeSession.store_name, summaryId: session.id });
+                setShowCompleted(true);
                 await loadActiveSession();
               }
             } catch (error) {
@@ -500,6 +516,35 @@ export default function CartScreen() {
           </TouchableOpacity>
         )}
       </ScrollView>
+
+      <TripCompletedModal
+        visible={showCompleted}
+        total={completedInfo.total}
+        items={completedInfo.items}
+        store={completedInfo.store}
+        onClose={() => setShowCompleted(false)}
+        onViewHistory={() => {
+          setShowCompleted(false);
+          router.push('/(tabs)/history');
+        }}
+        onViewSummary={completedInfo.summaryId ? () => {
+          setShowCompleted(false);
+          router.push(`/summary/${completedInfo.summaryId}`);
+        } : undefined}
+        onStartNew={() => {
+          setShowCompleted(false);
+          setShowStartFlow(true);
+        }}
+      />
+
+      <StartGroceryFlow
+        visible={showStartFlow}
+        onClose={() => setShowStartFlow(false)}
+        onSuccess={() => {
+          setShowStartFlow(false);
+          loadActiveSession();
+        }}
+      />
     </View>
   );
 }

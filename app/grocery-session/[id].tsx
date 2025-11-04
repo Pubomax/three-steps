@@ -170,12 +170,21 @@ export default function GrocerySessionDetail() {
                 })
                 .eq('id', id);
 
+              const { data: currentSession } = await supabase
+                .from('grocery_sessions')
+                .select('store_name, store_location')
+                .eq('id', id)
+                .single();
+
               const { data: checkoutSession, error: sessionError } = await supabase
                 .from('checkout_sessions')
                 .insert({
                   user_id: user.id,
                   total_amount: total,
                   item_count: items.length,
+                  store_name: (currentSession as any)?.store_name ?? null,
+                  store_location: (currentSession as any)?.store_location ?? null,
+                  grocery_session_id: id as string,
                 })
                 .select('id')
                 .single();

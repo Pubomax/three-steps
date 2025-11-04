@@ -1,5 +1,5 @@
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   ScrollView,
   Image,
   Modal,
+  Keyboard,
 } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { ArrowLeft, QrCode, ShoppingCart, X, Save, AlertCircle, Camera } from 'lucide-react-native';
@@ -20,6 +21,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect } from '@react-navigation/native';
 
 type ScanStep = 'qr' | 'photo' | 'details';
 
@@ -48,11 +50,30 @@ export default function ScanScreen() {
   const [showStartFlow, setShowStartFlow] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [cartTotal, setCartTotal] = useState(0);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [isEnteringDetails, setIsEnteringDetails] = useState(false);
   const cameraRef = useRef<CameraView>(null);
 
   useEffect(() => {
     checkActiveSession();
   }, []);
+
+  // Hide floating button when keyboard is open (avoid blocking inputs)
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  // Re-check when screen gains focus to avoid race after creating a session
+  useFocusEffect(
+    useCallback(() => {
+      checkActiveSession();
+    }, [isGuest])
+  );
 
   useEffect(() => {
     if (activeSession) {
@@ -85,6 +106,8 @@ export default function ScanScreen() {
           .select('id, name, store_name, store_location, spending_limit')
           .eq('user_id', user.id)
           .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
 
         setActiveSession(session as ActiveSession | null);
@@ -224,7 +247,7 @@ export default function ScanScreen() {
 
   const takePicture = async () => {
     if (cameraRef.current) {
-      const photo = await cameraRef.current.takePictureAsync({ base64: true });
+      const photo = await cameraRef.current.takePictureAsync({ base64: false, quality: 0.5 });
       if (photo && photo.uri) {
         setProductPhoto(photo.uri);
         setShowCamera(false);
@@ -445,70 +468,88 @@ export default function ScanScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <ArrowLeft size={24} color="#e0e0e0" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Shopping in Progress</Text>
+        <Text style={styles.headerTitle}>{scanStep === 'details' ? 'Add Item' : 'Shopping in Progress'}</Text>
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {/* Active Session Card */}
-        <View style={styles.sessionCard}>
-          <View style={styles.sessionHeader}>
-            <Text style={styles.sessionLabel}>Active Shopping Session</Text>
-            <Text style={styles.sessionName}>{activeSession.name}</Text>
-            <Text style={styles.sessionStore}>at {activeSession.store_name}</Text>
-          </View>
+        {/* Active Session Card (hide on details for focus) */}
+        {scanStep !== 'details' && (
+          <View style={styles.sessionCard}>
+            <View style={styles.sessionHeader}>
+              <Text style={styles.sessionLabel}>Active Shopping Session</Text>
+              <Text style={styles.sessionName}>{activeSession.name}</Text>
+              <Text style={styles.sessionStore}>at {activeSession.store_name}</Text>
+            </View>
 
-          <View style={styles.sessionStats}>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Spent</Text>
-              <Text style={styles.statValue}>${cartTotal.toFixed(2)}</Text>
+            <View style={styles.sessionStats}>
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Spent</Text>
+                <Text style={styles.statValue}>${cartTotal.toFixed(2)}</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Budget</Text>
+                <Text style={styles.statValueMuted}>${activeSession.spending_limit.toFixed(2)}</Text>
+              </View>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Budget</Text>
-              <Text style={styles.statValueMuted}>${activeSession.spending_limit.toFixed(2)}</Text>
+
+            <View style={styles.progressSection}>
+              <View style={styles.progressHeader}>
+                <Text style={styles.progressLabel}>Current Spending</Text>
+                <Text style={styles.progressPercentage}>{Math.round(spendingPercentage)}%</Text>
+              </View>
+              <View style={styles.progressBarContainer}>
+                <View style={[styles.progressBar, { width: `${spendingPercentage}%` }]} />
+              </View>
             </View>
           </View>
+        )}
 
-          <View style={styles.progressSection}>
-            <View style={styles.progressHeader}>
-              <Text style={styles.progressLabel}>Current Spending</Text>
-              <Text style={styles.progressPercentage}>{Math.round(spendingPercentage)}%</Text>
-            </View>
-            <View style={styles.progressBarContainer}>
-              <View style={[styles.progressBar, { width: `${spendingPercentage}%` }]} />
-            </View>
+        {/* Action Buttons (hide on details for focus) */}
+        {scanStep !== 'details' && (
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={styles.glassButton}
+              onPress={() => router.push('/(tabs)')}>
+              <Text style={styles.glassButtonText}>View Cart</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.glassButtonOutline}
+              onPress={() => {
+                Alert.alert(
+                  'End Session',
+                  'Are you sure you want to end this grocery session?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'End Session', style: 'destructive', onPress: () => router.push('/(tabs)') },
+                  ]
+                );
+              }}>
+              <Text style={styles.glassButtonOutlineText}>End Session</Text>
+            </TouchableOpacity>
           </View>
-        </View>
-
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={styles.glassButton}
-            onPress={() => router.push('/(tabs)')}>
-            <Text style={styles.glassButtonText}>View Cart</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={styles.glassButtonOutline}
-            onPress={() => {
-              Alert.alert(
-                'End Session',
-                'Are you sure you want to end this grocery session?',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'End Session', style: 'destructive', onPress: () => router.push('/(tabs)/home') },
-                ]
-              );
-            }}>
-            <Text style={styles.glassButtonOutlineText}>End Session</Text>
-          </TouchableOpacity>
-        </View>
+        )}
 
         {/* Product Details Form (if in details step) */}
         {scanStep === 'details' && (
           <View style={styles.detailsCard}>
             <Text style={styles.detailsTitle}>Product Details</Text>
 
-            {productPhoto && <Image source={{ uri: productPhoto }} style={styles.productImage} />}
+            {productPhoto && (
+              <View>
+                <Image source={{ uri: productPhoto }} style={styles.productImage} />
+                <TouchableOpacity style={styles.retakeBadge} onPress={() => { setShowCamera(true); setScanStep('photo'); }}>
+                  <Text style={styles.retakeText}>Retake</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {qrCode ? (
+              <View style={styles.barcodeRow}>
+                <QrCode size={16} color="#ff00ff" />
+                <Text style={styles.barcodeText}>{qrCode}</Text>
+              </View>
+            ) : null}
 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Brand</Text>
@@ -518,6 +559,8 @@ export default function ScanScreen() {
                 placeholderTextColor="#999999"
                 value={brandName}
                 onChangeText={setBrandName}
+                onFocus={() => setIsEnteringDetails(true)}
+                onBlur={() => setIsEnteringDetails(false)}
               />
             </View>
 
@@ -529,6 +572,8 @@ export default function ScanScreen() {
                 placeholderTextColor="#999999"
                 value={productName}
                 onChangeText={setProductName}
+                onFocus={() => setIsEnteringDetails(true)}
+                onBlur={() => setIsEnteringDetails(false)}
               />
             </View>
 
@@ -541,6 +586,8 @@ export default function ScanScreen() {
                 value={price}
                 onChangeText={setPrice}
                 keyboardType="decimal-pad"
+                onFocus={() => setIsEnteringDetails(true)}
+                onBlur={() => setIsEnteringDetails(false)}
               />
             </View>
 
@@ -553,6 +600,8 @@ export default function ScanScreen() {
                 value={quantity}
                 onChangeText={setQuantity}
                 keyboardType="number-pad"
+                onFocus={() => setIsEnteringDetails(true)}
+                onBlur={() => setIsEnteringDetails(false)}
               />
             </View>
 
@@ -566,23 +615,25 @@ export default function ScanScreen() {
                 onPress={saveProduct}
                 disabled={loading}>
                 <Save size={20} color="#ff00ff" />
-                <Text style={styles.glassButtonText}>{loading ? 'Saving...' : 'Save Product'}</Text>
+                <Text style={styles.glassButtonText}>{loading ? 'Saving...' : 'Add to Cart'}</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
       </ScrollView>
 
-      {/* Floating Scan Button */}
-      <TouchableOpacity
-        style={styles.floatingScanButton}
-        onPress={() => {
-          setShowCamera(true);
-          setScanStep('qr');
-        }}>
-        <QrCode size={24} color="#fff" />
-        <Text style={styles.floatingScanButtonText}>Scan Item</Text>
-      </TouchableOpacity>
+      {/* Floating Scan Button: show only when ready to start a scan (hide for photo/details/keyboard) */}
+      {scanStep === 'qr' && !keyboardVisible && !isEnteringDetails && !showCamera && (
+        <TouchableOpacity
+          style={styles.floatingScanButton}
+          onPress={() => {
+            setShowCamera(true);
+            setScanStep('qr');
+          }}>
+          <QrCode size={24} color="#fff" />
+          <Text style={styles.floatingScanButtonText}>Scan Item</Text>
+        </TouchableOpacity>
+      )}
     </LinearGradient>
   );
 }
@@ -828,6 +879,36 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 8,
     marginBottom: 16,
+  },
+  retakeBadge: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  retakeText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  barcodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  barcodeText: {
+    color: '#e0e0e0',
+    fontSize: 14,
+    fontWeight: '600',
   },
   inputGroup: {
     marginBottom: 16,

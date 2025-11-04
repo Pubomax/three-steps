@@ -1,11 +1,17 @@
 const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 
 const supabaseUrl = 'https://qijxxreajhacsyupmskd.supabase.co';
-const serviceRoleKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpanh4cmVhamhhY3N5dXBtc2tkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4NTUwMTIsImV4cCI6MjA3NzQzMTAxMn0.VXy7mdRg6cVjy13CK4x3nWHma_ySjxpDNm9Y-k4hwDg';
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabase = createClient(supabaseUrl, serviceRoleKey, {
+if (!SERVICE_ROLE_KEY) {
+  console.error('❌ Missing SUPABASE_SERVICE_ROLE_KEY in environment');
+  process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, SERVICE_ROLE_KEY, {
   auth: {
     autoRefreshToken: false,
     persistSession: false
@@ -27,8 +33,8 @@ async function applyMigration() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'apikey': serviceRoleKey,
-        'Authorization': `Bearer ${serviceRoleKey}`
+        'apikey': SERVICE_ROLE_KEY,
+        'Authorization': `Bearer ${SERVICE_ROLE_KEY}`
       },
       body: JSON.stringify({
         query: migrationSQL

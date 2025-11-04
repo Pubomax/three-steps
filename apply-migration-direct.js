@@ -1,10 +1,15 @@
 const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
 
 const supabaseUrl = 'https://qijxxreajhacsyupmskd.supabase.co';
-const serviceRoleKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpanh4cmVhamhhY3N5dXBtc2tkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MTg1NTAxMiwiZXhwIjoyMDc3NDMxMDEyfQ.PLACEHOLDER';
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Try with actual service role key structure
-const actualServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpanh4cmVhamhhY3N5dXBtc2tkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4NTUwMTIsImV4cCI6MjA3NzQzMTAxMn0.VXy7mdRg6cVjy13CK4x3nWHma_ySjxpDNm9Y-k4hwDg';
+if (!SERVICE_ROLE_KEY) {
+  console.error('❌ Missing SUPABASE_SERVICE_ROLE_KEY in environment');
+  process.exit(1);
+}
+
+// Service role key is provided via environment variable
 
 async function applyMigration() {
   console.log('🔧 Applying migration using direct SQL execution...\n');
@@ -104,15 +109,15 @@ async function applyMigration() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': actualServiceKey,
-          'Authorization': `Bearer ${actualServiceKey}`,
+          'apikey': SERVICE_ROLE_KEY,
+          'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
           'Prefer': 'return=minimal'
         },
         body: JSON.stringify({ query: stmt.sql })
       });
 
       // Check if we can at least verify tables exist
-      const supabase = createClient(supabaseUrl, actualServiceKey);
+      const supabase = createClient(supabaseUrl, SERVICE_ROLE_KEY);
       
       // For ALTER TABLE statements, check if column exists after
       if (stmt.name.includes('Add') && stmt.name.includes('column')) {

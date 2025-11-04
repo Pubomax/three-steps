@@ -7,7 +7,11 @@
 
 require('dotenv').config();
 
-const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpanh4cmVhamhhY3N5dXBtc2tkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MTg1NTAxMiwiZXhwIjoyMDc3NDMxMDEyfQ.MZfJDNRPXZ4Y06VU8_Etn4zsBLaszaN0oZwYQGgqD8A';
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!SERVICE_ROLE_KEY) {
+  console.error('❌ Missing SUPABASE_SERVICE_ROLE_KEY in environment');
+  process.exit(1);
+}
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 
 const policies = [

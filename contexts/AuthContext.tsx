@@ -44,6 +44,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // User logged in, disable guest mode
         setIsGuest(false);
         await AsyncStorage.removeItem(GUEST_MODE_KEY);
+        try {
+          const sessionsJson = await AsyncStorage.getItem('guest_sessions');
+          if (sessionsJson) {
+            await migrateGuestDataToUser();
+          }
+        } catch {}
       }
     });
 
@@ -112,22 +118,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: new Error('No user logged in') };
       }
 
-      // Delete all user data from Supabase
-      // The database should have ON DELETE CASCADE configured to handle related data
-      const { error: deleteError } = await supabase.rpc('delete_user_account');
-      
-      if (deleteError) {
-        // If RPC doesn't exist, we'll need to delete the auth user directly
-        // This will cascade to related data if properly configured
-        console.log('RPC delete failed, trying direct auth deletion:', deleteError);
-      }
-
-      // Delete the auth user account (this is the primary deletion)
-      const { error: authError } = await supabase.auth.admin.deleteUser(user.id);
-      
-      if (authError) {
-        // User doesn't have admin access, use the signOut approach
-        // The deletion will need to happen server-side or via database triggers
+      const { error: fnError } = await supabase.functions.invoke('delete-user', {
+        body: { userId: user.id },
+      });
+      if (fnError) {
         await supabase.auth.signOut();
       }
       
@@ -140,6 +134,82 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       return { error: error as Error };
     }
+  };
+
+  const migrateGuestDataToUser = async () => {
+    try {
+      const sessionsJson = await AsyncStorage.getItem('guest_sessions');
+      if (!sessionsJson) return;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const guestSessions = JSON.parse(sessionsJson);
+      for (const s of guestSessions) {
+        const { data: createdSession } = await supabase
+          .from('grocery_sessions')
+          .insert({
+            user_id: user.id,
+            name: s.name,
+            store_name: s.store_name ?? null,
+            store_location: s.store_location ?? null,
+            spending_limit: s.spending_limit ?? null,
+            grocery_type: s.grocery_type ?? 'regular',
+            is_active: !!s.is_active,
+            started_at: s.started_at ?? new Date().toISOString(),
+            status: s.status ?? 'in_progress',
+          })
+          .select('id')
+          .single();
+
+        if (!createdSession) continue;
+
+        const cartKey = `guest_cart_${s.id}`;
+        const cartJson = await AsyncStorage.getItem(cartKey);
+        if (cartJson) {
+          const cart = JSON.parse(cartJson);
+          for (const item of cart) {
+            // Attempt to find existing product by QR; if not present, create minimal product
+            let productId = item.product_id;
+            if (item.product_id && typeof item.product_id === 'string') {
+              const { data: existingProduct } = await supabase
+                .from('products')
+                .select('id')
+                .eq('qr_code', item.product_id)
+                .maybeSingle();
+              if (existingProduct) {
+                productId = existingProduct.id;
+              } else {
+                const { data: newProduct } = await supabase
+                  .from('products')
+                  .insert({
+                    qr_code: item.product_id,
+                    brand: item.products?.brand ?? null,
+                    name: item.products?.name ?? 'Unknown',
+                    image_url: item.products?.image_url ?? null,
+                  })
+                  .select('id')
+                  .single();
+                if (newProduct) productId = newProduct.id;
+              }
+            }
+
+            await supabase.from('cart_items').insert({
+              user_id: user.id,
+              session_id: createdSession.id,
+              product_id: productId,
+              price: item.price,
+              quantity: item.quantity || 1,
+            });
+          }
+        }
+      }
+
+      await AsyncStorage.removeItem('guest_sessions');
+      const keys = await AsyncStorage.getAllKeys();
+      const guestCartKeys = keys.filter((k) => k.startsWith('guest_cart_'));
+      if (guestCartKeys.length) await AsyncStorage.multiRemove(guestCartKeys);
+    } catch {}
   };
 
   return (

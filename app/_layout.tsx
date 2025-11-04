@@ -17,10 +17,8 @@ function RootLayoutNav() {
     const isAuthenticated = user || isGuest;
 
     if (!isAuthenticated && inAuthGroup) {
-      // Not logged in and not guest - redirect to login
       router.replace('/login');
     } else if (isAuthenticated && !inAuthGroup) {
-      // Logged in or guest mode - redirect to app
       router.replace('/(tabs)/home');
     }
   }, [user, isGuest, segments, loading]);

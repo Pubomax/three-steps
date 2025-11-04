@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 
 /**
  * Uploads an image to Supabase Storage and returns the public URL
@@ -7,43 +8,60 @@ import * as FileSystem from 'expo-file-system/legacy';
  * @param bucket - Storage bucket name (default: 'product-images')
  * @returns Public URL of the uploaded image
  */
+function base64ToUint8Array(base64: string): Uint8Array {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+  let output: number[] = [];
+  let buffer = 0;
+  let bits = 0;
+  for (let i = 0; i < base64.length; i++) {
+    const c = chars.indexOf(base64.charAt(i));
+    if (c === -1) continue; // ignore invalid chars (including newlines)
+    buffer = (buffer << 6) | c;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      output.push((buffer >> bits) & 0xff);
+    }
+  }
+  return new Uint8Array(output);
+}
+
 export async function uploadImage(imageUri: string, bucket: string = 'product-images'): Promise<string> {
   try {
-    // Generate unique filename
-    const fileExtension = imageUri.split('.').pop() || 'jpg';
+    // First compress to a small thumbnail (max width 512px, strong compression)
+    const compressed = await manipulateAsync(
+      imageUri,
+      [{ resize: { width: 512 } }],
+      { compress: 0.2, format: SaveFormat.JPEG }
+    );
+
+    const uploadUri = compressed.uri;
+    const fileExtension = 'jpg';
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExtension}`;
     const filePath = `products/${fileName}`;
+    const mimeType = 'image/jpeg';
 
-    // Read the file as base64
-    const base64 = await FileSystem.readAsStringAsync(imageUri, {
-      encoding: 'base64',
+    // Upload via REST endpoint using Expo FileSystem (reliable for file:// URIs)
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+    const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+    const uploadUrl = `${supabaseUrl}/storage/v1/object/${bucket}/${filePath}`;
+
+    const result = await FileSystem.uploadAsync(uploadUrl, uploadUri, {
+      httpMethod: 'POST',
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      headers: {
+        Authorization: `Bearer ${supabaseAnonKey}`,
+        'Content-Type': mimeType,
+        'x-upsert': 'false',
+      },
     });
 
-    // Decode base64 to binary
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-
-    // Upload to Supabase Storage using ArrayBuffer
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .upload(filePath, byteArray, {
-        contentType: `image/${fileExtension}`,
-        cacheControl: '3600',
-        upsert: false,
-      });
-
-    if (error) {
-      console.error('Upload error:', error);
-      throw new Error(`Failed to upload image: ${error.message}`);
+    if (result.status !== 200 && result.status !== 201) {
+      throw new Error(`Upload failed with status ${result.status}: ${result.body}`);
     }
 
     // Get public URL
     const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
-
     return publicUrlData.publicUrl;
   } catch (error) {
     console.error('Error uploading image:', error);

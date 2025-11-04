@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Linking } from 'react-native';
 import { UserCircle, Trash2, LogOut, Mail } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
@@ -140,6 +140,18 @@ export default function SettingsScreen() {
           <View style={styles.actionTextContainer}>
             <Text style={styles.actionTitle}>Sign Out</Text>
             <Text style={styles.actionDescription}>Sign out of your account</Text>
+          </View>
+        </TouchableOpacity>
+
+        
+
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={() => Linking.openURL('mailto:your-email@example.com?subject=Strago%20Issue&body=Describe%20the%20issue...')}>
+          <Mail size={24} color="#6b7280" />
+          <View style={styles.actionTextContainer}>
+            <Text style={styles.actionTitle}>Report Issue</Text>
+            <Text style={styles.actionDescription}>Send us details to help fix it</Text>
           </View>
         </TouchableOpacity>
       </View>
